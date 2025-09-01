@@ -239,6 +239,7 @@ def main():
     
     # Prepare data for model
     full_script = '\n'.join(scripts)
+    full_script = full_script.replace("’", "'")        
     
     # Load processor
     print(f"Loading processor & model from {args.model_path}")
@@ -255,7 +256,7 @@ def main():
     except Exception as e:
         print(f"[ERROR] : {type(e).__name__}: {e}")
         print(traceback.format_exc())
-        print("Error loading the model. Please try using SDPA. However, note that only FlashAttention_2 has been fully tested, and using SDPA may result in lower audio quality.")
+        print("Error loading the model. Trying to use SDPA. However, note that only flash_attention_2 has been fully tested, and using SDPA may result in lower audio quality.")
         model = VibeVoiceForConditionalGenerationInference.from_pretrained(
             args.model_path,
             torch_dtype=torch.bfloat16,

@@ -54,12 +54,23 @@ class VibeVoiceDemo:
         )
         
         # Load model
-        self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-            self.model_path,
-            torch_dtype=torch.bfloat16,
-            device_map='cuda',
-            attn_implementation="flash_attention_2",
-        )
+        try:
+            self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                self.model_path,
+                torch_dtype=torch.bfloat16,
+                device_map='cuda',
+                attn_implementation='flash_attention_2' # flash_attention_2 is recommended
+            )
+        except Exception as e:
+            print(f"[ERROR] : {type(e).__name__}: {e}")
+            print(traceback.format_exc())
+            print("Error loading the model. Trying to use SDPA. However, note that only flash_attention_2 has been fully tested, and using SDPA may result in lower audio quality.")
+            self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                self.model_path,
+                torch_dtype=torch.bfloat16,
+                device_map='cuda',
+                attn_implementation='sdpa'
+            )
         self.model.eval()
         
         # Use SDE solver by default
@@ -992,6 +1003,11 @@ Or paste text directly and it will auto-assign speakers.""",
             inputs=[],
             outputs=[audio_output, complete_audio_output],
             queue=False
+        ).then(  # Immediate UI update to hide Generate, show Stop (non-queued)
+            fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
+            inputs=[],
+            outputs=[generate_btn, stop_btn],
+            queue=False
         ).then(
             fn=generate_podcast_wrapper,
             inputs=[num_speakers, script_input] + speaker_selections + [cfg_scale],
@@ -1076,6 +1092,16 @@ Or paste text directly and it will auto-assign speakers.""",
             label="Try these example scripts:"
         )
 
+        # --- Risks & limitations (footer) ---
+        gr.Markdown(
+            """
+## Risks and limitations
+
+While efforts have been made to optimize it through various techniques, it may still produce outputs that are unexpected, biased, or inaccurate. VibeVoice inherits any biases, errors, or omissions produced by its base model (specifically, Qwen2.5 1.5b in this release).
+Potential for Deepfakes and Disinformation: High-quality synthetic speech can be misused to create convincing fake audio content for impersonation, fraud, or spreading disinformation. Users must ensure transcripts are reliable, check content accuracy, and avoid using generated content in misleading ways. Users are expected to use the generated content and to deploy the models in a lawful manner, in full compliance with all applicable laws and regulations in the relevant jurisdictions. It is best practice to disclose the use of AI when sharing AI-generated content.
+            """,
+            elem_classes="generation-card",  # 可选：复用卡片样式
+        )
     return interface
 
 

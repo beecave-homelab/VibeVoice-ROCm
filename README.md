@@ -16,6 +16,62 @@
 <img src="Figures/VibeVoice_logo.png" alt="VibeVoice Logo" width="300">
 </div>
 
+## 🚀 VibeVoice Dialogue Generation (main.py)
+
+A comprehensive Gradio interface for generating high-quality multi-speaker dialogue audio using VibeVoice models. This tool provides an intuitive web interface for creating conversational audio content with advanced features and controls.
+
+### ✨ Features
+
+- **Multi-Speaker Support**: Generate dialogue with up to 4 distinct speakers
+- **Model Selection**: Choose between VibeVoice-7B-Preview and VibeVoice-1.5B models
+- **Voice Normalization**: Automatically normalize voice sample volumes for consistent audio quality
+- **Advanced Settings**: Fine-tune generation parameters (CFG scale, diffusion steps, temperature, etc.)
+- **AI Script Generation**: Generate dialogue scripts using OpenAI GPT-4o-mini (requires API key)
+- **Load-on-Demand**: Option to load models only when needed to save VRAM
+- **Streaming Audio**: Real-time audio generation with live streaming support
+- **Custom Voices**: Support for custom voice samples in organized subdirectories
+
+### 🎯 Usage
+
+```bash
+# Basic usage
+python main.py
+
+# With load-on-demand mode (faster startup)
+python main.py --lod
+
+# With debug mode
+python main.py --debug
+
+# Custom port
+python main.py --port 8080
+```
+
+### 🔧 Setup
+
+1. **Install dependencies**: Follow the installation instructions below
+2. **Add OpenAI API key**: Create a `.env` file with `OPENAI_API_KEY=your_key_here` for AI script generation
+3. **Add custom voices**: Place voice samples in the `custom_voices/` directory (supports subdirectories)
+4. **Run the interface**: Execute `python main.py`
+
+### 📁 Voice Organization
+
+- **Demo voices**: Located in `demo/voices/` (included with the project)
+- **Custom voices**: Place in `custom_voices/` directory
+- **Subdirectories**: Organize voices into subdirectories (e.g., `custom_voices/characters/`, `custom_voices/narrators/`)
+- **Supported formats**: WAV, MP3, FLAC, OGG, M4A, AAC
+
+### 🔑 API Key Requirement
+
+The AI script generation feature requires an OpenAI API key. Add it to a `.env` file:
+```
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+*Note: Support for OAI-compatible servers and alternative models will be added soon.*
+
+---
+
 VibeVoice is a novel framework designed for generating **expressive**, **long-form**, **multi-speaker** conversational audio, such as podcasts, from text. It addresses significant challenges in traditional Text-to-Speech (TTS) systems, particularly in scalability, speaker consistency, and natural turn-taking.
 
 A core innovation of VibeVoice is its use of continuous speech tokenizers (Acoustic and Semantic) operating at an ultra-low frame rate of 7.5 Hz. These tokenizers efficiently preserve audio fidelity while significantly boosting computational efficiency for processing long sequences. VibeVoice employs a [next-token diffusion](https://arxiv.org/abs/2412.08635) framework, leveraging a Large Language Model (LLM) to understand textual context and dialogue flow, and a diffusion head to generate high-fidelity acoustic details.
@@ -97,6 +153,24 @@ Try your own samples at [Colab](https://colab.research.google.com/github/microso
 ## Installation
 We recommend to use NVIDIA Deep Learning Container to manage the CUDA environment. 
 
+### 🔧 Setup Virtual Environment (HIGHLY RECOMMENDED)
+Before installing dependencies, it's **highly recommended** to create a virtual environment to avoid conflicts with system packages:
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Linux/macOS:
+source venv/bin/activate
+# On Windows:
+# venv\Scripts\activate
+
+# Verify activation (should show venv path)
+which python
+```
+
+### 🐳 Docker Installation (Recommended)
 1. Launch docker
 ```bash
 # NVIDIA PyTorch Container 24.07 / 24.10 / 24.12 verified. 
@@ -116,6 +190,20 @@ cd VibeVoice/
 pip install -e .
 ```
 
+### 💻 Direct Installation (Alternative)
+If you prefer not to use Docker, you can install directly on your system:
+
+```bash
+# Clone the repository
+git clone https://github.com/microsoft/VibeVoice.git
+cd VibeVoice/
+
+# Install dependencies
+pip install -e .
+```
+
+**Note**: Direct installation requires CUDA-compatible GPU drivers and PyTorch with CUDA support.
+
 ## Usages
 
 ### 🚨 Tips
@@ -129,10 +217,10 @@ We observed users may encounter occasional instability when synthesizing Chinese
 apt update && apt install ffmpeg -y # for demo
 
 # For 1.5B model
-python demo/gradio_demo.py --model_path microsoft/VibeVoice-1.5B --share
+python demo/gradio_demo.py --model_path microsoft/VibeVoice-1.5B
 
 # For 7B model
-python demo/gradio_demo.py --model_path WestZhang/VibeVoice-Large-pt --share
+python demo/gradio_demo.py --model_path WestZhang/VibeVoice-Large-pt
 ```
 
 ### Usage 2: Inference from files directly
