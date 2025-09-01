@@ -5,14 +5,8 @@ VibeVoice Gradio Demo - High-Quality Dialogue Generation Interface with Streamin
 import argparse
 import json
 import os
-import sys
-import tempfile
 import time
-import random
-import os
-from pathlib import Path
-from typing import List, Dict, Any, Iterator
-from datetime import datetime
+from typing import Iterator
 import threading
 import numpy as np
 import gradio as gr
@@ -31,7 +25,6 @@ except ImportError:
     OPENAI_AVAILABLE = False
     print("Warning: OpenAI package not available. AI script generation will use fallback.")
 
-from vibevoice.modular.configuration_vibevoice import VibeVoiceConfig
 from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from vibevoice.modular.streamer import AudioStreamer
@@ -76,8 +69,7 @@ class VibeVoiceDemo:
             # Initialize voice presets for UI creation even in LOD mode
             self.setup_voice_presets()
         
-        # Define stop words for topic extraction
-        self.stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'}
+        # Removed legacy stop words storage from deprecated script system
         
     def ensure_model_loaded(self):
         """Ensure model is loaded, load it if not already loaded."""
@@ -651,23 +643,7 @@ class VibeVoiceDemo:
         """Store the last prompt data for regeneration."""
         self.last_prompt_data = prompt_data
     
-    def _generate_filename_from_title(self, title: str) -> str:
-        """Generate a clean filename from a scene title."""
-        import re
-        
-        # Remove special characters and replace spaces with underscores
-        clean_title = re.sub(r'[^\w\s-]', '', title)
-        clean_title = re.sub(r'[-\s]+', '_', clean_title)
-        clean_title = clean_title.strip('_')
-        
-        # Limit length and ensure it's not empty
-        if len(clean_title) > 50:
-            clean_title = clean_title[:50]
-        
-        if not clean_title:
-            clean_title = "vibevoice_dialogue"
-        
-        return f"{clean_title}.wav"
+    # Removed unused _generate_filename_from_title helper from legacy system
 
     def _parse_json_response(self, raw_response: str) -> dict:
         """Robustly parse JSON response from OpenAI, handling code blocks and various formats."""
@@ -740,33 +716,7 @@ class VibeVoiceDemo:
             print("🔍 DEBUG: All parsing attempts failed")
         return None
 
-    def _get_num_speakers_from_script(self, script: str) -> int:
-        """Determine the number of unique speakers in a script."""
-        import re
-        speakers = set()
-        
-        lines = script.strip().split('\n')
-        for line in lines:
-            # Use regex to find speaker patterns
-            match = re.match(r'^Speaker\s+(\d+)\s*:', line.strip(), re.IGNORECASE)
-            if match:
-                speaker_id = int(match.group(1))
-                speakers.add(speaker_id)
-        
-        # If no speakers found, default to 1
-        if not speakers:
-            return 1
-        
-        # Return the maximum speaker ID + 1 (assuming 0-based indexing)
-        # or the count of unique speakers if they're 1-based
-        max_speaker = max(speakers)
-        min_speaker = min(speakers)
-        
-        if min_speaker == 0:
-            return max_speaker + 1
-        else:
-            # Assume 1-based indexing, return the count
-            return len(speakers)
+    # Removed unused _get_num_speakers_from_script helper from legacy system
 
     def generate_sample_script_llm(self, topic: str = "", num_speakers: int = 2, style: str = "casual", context: str = "", speaker_names: list = None) -> tuple[str, str, str]:
         """Generate a sample conversation script using OpenAI GPT-4o-mini with simplified approach."""
