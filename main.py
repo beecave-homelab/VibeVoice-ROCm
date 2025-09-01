@@ -753,7 +753,7 @@ class VibeVoiceDemo:
 
             if self.debug:
                 print("🔍 DEBUG: Sending request to OpenAI API...")
-                print(f"🔍 DEBUG: Model: gpt-4o-mini")
+                print(f"🔍 DEBUG: Model: gpt-41-mini")
                 print(f"🔍 DEBUG: Max tokens: 2000")
                 print(f"🔍 DEBUG: Temperature: 0.6")
                 print(f"🔍 DEBUG: Top-p: 0.85")
@@ -766,7 +766,7 @@ class VibeVoiceDemo:
                 print("🔍 DEBUG: === END OF RAW MESSAGES ===")
 
             response = client.chat.completions.create(
-                model="gpt-4o-mini",  # Using gpt-4o-mini as requested
+                model="gpt-4.1-mini",  # Using gpt-4o-mini as requested
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": user_message}
@@ -1665,7 +1665,7 @@ Or paste text directly and it will auto-assign speakers.""",
             """Regenerate using the last prompt data."""
             if demo_instance.last_prompt_data is None:
                 error_msg = "No previous generation found to regenerate"
-                return "", error_msg
+                return "", "", error_msg
 
             try:
                 # Extract last prompt data
@@ -1705,7 +1705,7 @@ Or paste text directly and it will auto-assign speakers.""",
 
             except Exception as e:
                 error_msg = f"Error regenerating: {str(e)}"
-                return "", error_msg
+                return "", "", error_msg
         
         # Connect regenerate last button
         regenerate_btn.click(
