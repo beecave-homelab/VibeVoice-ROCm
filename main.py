@@ -36,13 +36,22 @@ logger = logging.get_logger(__name__)
 
 
 class VibeVoiceDemo:
-    def __init__(self, model_path: str, device: str = "cuda", inference_steps: int = 5, debug: bool = False, load_on_demand: bool = False):
+    def __init__(self, model_path: str, device: str = "cuda", inference_steps: int = 5, debug: bool = False, load_on_demand: bool = False,
+                 script_ai_url: str | None = None, script_ai_model: str | None = None, script_ai_api_key: str | None = None,
+                 hf_offline: bool | None = None, hf_cache_dir: str | None = None):
         """Initialize the VibeVoice demo with model loading."""
         self.model_path = model_path
         self.device = device
         self.inference_steps = inference_steps
         self.debug = debug
         self.load_on_demand = load_on_demand
+        # Script generation (OpenAI-compatible) settings
+        self.script_ai_url = script_ai_url
+        self.script_ai_model = script_ai_model
+        self.script_ai_api_key = script_ai_api_key
+        # HF loading options
+        self.hf_offline = hf_offline
+        self.hf_cache_dir = hf_cache_dir
         self.is_generating = False  # Track generation state
         self.stop_generation = False  # Flag to stop generation
         self.current_streamer = None  # Track current audio streamer
@@ -118,20 +127,35 @@ class VibeVoiceDemo:
         """Load the VibeVoice model and processor."""
         print(f"Loading processor & model from {self.model_path}")
 
-        # Load processor
-        self.processor = VibeVoiceProcessor.from_pretrained(
-            self.model_path,
-        )
+        # Determine offline and cache settings
+        hf_offline_env = os.getenv('HF_HUB_OFFLINE')
+        offline_mode = self.hf_offline if self.hf_offline is not None else (hf_offline_env == '1' or (hf_offline_env or '').lower() in ['true', 'yes'])
+        cache_dir = self.hf_cache_dir or os.getenv('HF_HOME') or os.getenv('TRANSFORMERS_CACHE') or None
 
-        # Load model
-        self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-            self.model_path,
-            torch_dtype=torch.bfloat16,
-            device_map='cuda',
-            attn_implementation="flash_attention_2",
-        )
-        self.model.eval()
-        
+        try:
+            # Load processor
+            self.processor = VibeVoiceProcessor.from_pretrained(
+                self.model_path,
+                local_files_only=bool(offline_mode),
+                cache_dir=cache_dir,
+            )
+
+            # Load model
+            self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                self.model_path,
+                torch_dtype=torch.bfloat16,
+                device_map='cuda',
+                attn_implementation="flash_attention_2",
+                local_files_only=bool(offline_mode),
+                cache_dir=cache_dir,
+            )
+            self.model.eval()
+        except Exception as e:
+            if offline_mode:
+                raise gr.Error(f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}")
+            else:
+                raise
+
         # Use SDE solver by default
         self.model.model.noise_scheduler = self.model.model.noise_scheduler.from_config(
             self.model.model.noise_scheduler.config, 
@@ -289,7 +313,7 @@ class VibeVoiceDemo:
                 raise gr.Error("Error: Please provide a script.")
 
             # Defend against common mistake
-            script = script.replace("’", "'")
+            script = script.replace("'", "'")
             
             if num_speakers < 1 or num_speakers > 4:
                 self.is_generating = False
@@ -728,16 +752,36 @@ class VibeVoiceDemo:
             # Load environment variables from .env file
             dotenv.load_dotenv()
 
-            # Get API key from environment
-            api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                raise Exception("OPENAI_API_KEY not found in environment variables. Please set your OpenAI API key.")
+            # Resolve effective settings with precedence: Defaults -> .env -> CLI args
+            env_base_url = (os.getenv('SCRIPT_AI_URL') or "").strip() or None
+            env_model = (os.getenv('SCRIPT_AI_MODEL') or "").strip() or None
+            env_script_api_key = (os.getenv('SCRIPT_AI_API_KEY') or "").strip() or None
+            env_openai_model_default = (os.getenv('OPENAI_MODEL') or 'gpt-4.1-mini').strip() or 'gpt-4.1-mini'
+
+            effective_base_url = self.script_ai_url or env_base_url
+            effective_model = self.script_ai_model or env_model or env_openai_model_default
+            effective_api_key = self.script_ai_api_key or env_script_api_key or (os.getenv('OPENAI_API_KEY') or "").strip()
+
+            # If using OpenAI platform (no custom base URL), require an API key
+            if not effective_base_url and not effective_api_key:
+                raise Exception("No API key provided. Set OPENAI_API_KEY or SCRIPT_AI_API_KEY in .env, or pass --script-ai-api-key.")
 
             # Initialize OpenAI client
-            client = OpenAI(api_key=api_key)
+            if effective_base_url:
+                # Ensure base URL ends with /v1 for OpenAI-compatible servers
+                if not effective_base_url.endswith('/v1'):
+                    if effective_base_url.endswith('/'):
+                        effective_base_url = effective_base_url + 'v1'
+                    else:
+                        effective_base_url = effective_base_url + '/v1'
+                client = OpenAI(api_key=effective_api_key or "", base_url=effective_base_url)
+            else:
+                client = OpenAI(api_key=effective_api_key)
 
             if self.debug:
-                print("🔍 DEBUG: OpenAI client initialized successfully")
+                print("🔍 DEBUG: OpenAI-compatible client initialized successfully")
+                print(f"🔍 DEBUG: Base URL: {effective_base_url or 'OpenAI default'}")
+                print(f"🔍 DEBUG: Model: {effective_model}")
                 print(f"🔍 DEBUG: Context provided: '{context[:200]}{'...' if len(context) > 200 else ''}'")
                 print(f"🔍 DEBUG: Speaker names: {speaker_names}")
                 print(f"🔍 DEBUG: Number of speakers: {num_speakers}")
@@ -753,7 +797,7 @@ class VibeVoiceDemo:
 
             if self.debug:
                 print("🔍 DEBUG: Sending request to OpenAI API...")
-                print(f"🔍 DEBUG: Model: gpt-41-mini")
+                print(f"🔍 DEBUG: Model: {effective_model}")
                 print(f"🔍 DEBUG: Max tokens: 2000")
                 print(f"🔍 DEBUG: Temperature: 0.6")
                 print(f"🔍 DEBUG: Top-p: 0.85")
@@ -766,7 +810,7 @@ class VibeVoiceDemo:
                 print("🔍 DEBUG: === END OF RAW MESSAGES ===")
 
             response = client.chat.completions.create(
-                model="gpt-4.1-mini",  # Using gpt-4o-mini as requested
+                model=effective_model,
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": user_message}
@@ -776,13 +820,78 @@ class VibeVoiceDemo:
                 top_p=0.85
             )
 
+            # Safely log and extract content for OpenAI-compatible servers
+            total_tokens = None
+            try:
+                usage_obj = getattr(response, 'usage', None)
+                if usage_obj is not None:
+                    total_tokens = getattr(usage_obj, 'total_tokens', None)
+                    if total_tokens is None and isinstance(usage_obj, dict):
+                        total_tokens = usage_obj.get('total_tokens')
+            except Exception:
+                total_tokens = None
+
+            # Extract content from various possible shapes
+            content_text = None
+            try:
+                choices = getattr(response, 'choices', None)
+                if choices is None and isinstance(response, dict):
+                    choices = response.get('choices')
+                if choices and len(choices) > 0:
+                    choice0 = choices[0]
+                    # message.content style (OpenAI Chat)
+                    message = getattr(choice0, 'message', None) if not isinstance(choice0, dict) else choice0.get('message')
+                    if message is not None:
+                        msg_content = getattr(message, 'content', None) if not isinstance(message, dict) else message.get('content')
+                        if isinstance(msg_content, str) and msg_content.strip():
+                            content_text = msg_content
+                    # text style (some OAI-compatible servers)
+                    if content_text is None:
+                        text_val = getattr(choice0, 'text', None) if not isinstance(choice0, dict) else choice0.get('text')
+                        if isinstance(text_val, str) and text_val.strip():
+                            content_text = text_val
+                    # direct content field
+                    if content_text is None:
+                        direct_content = getattr(choice0, 'content', None) if not isinstance(choice0, dict) else choice0.get('content')
+                        if isinstance(direct_content, str) and direct_content.strip():
+                            content_text = direct_content
+                        elif isinstance(direct_content, list):
+                            try:
+                                content_text = ''.join([(part.get('text', '') if isinstance(part, dict) else str(part)) for part in direct_content]).strip()
+                            except Exception:
+                                pass
+            except Exception:
+                content_text = None
+
             if self.debug:
                 print("🔍 DEBUG: Received response from OpenAI API")
-                print(f"🔍 DEBUG: Response tokens used: {response.usage.total_tokens if response.usage else 'N/A'}")
-                print(f"🔍 DEBUG: Raw response content: {response.choices[0].message.content[:500]}{'...' if len(response.choices[0].message.content) > 500 else ''}")
+                print(f"🔍 DEBUG: Response tokens used: {total_tokens if total_tokens is not None else 'N/A'}")
+                print(f"🔍 DEBUG: Response type: {type(response)}")
+                print(f"🔍 DEBUG: Response attributes: {dir(response)}")
+                try:
+                    print(f"🔍 DEBUG: Response dict: {response.model_dump() if hasattr(response, 'model_dump') else str(response)}")
+                except Exception as e:
+                    print(f"🔍 DEBUG: Could not dump response: {e}")
+                if isinstance(content_text, str):
+                    preview = content_text[:500]
+                    suffix = '...' if len(content_text) > 500 else ''
+                    print(f"🔍 DEBUG: Raw response content: {preview}{suffix}")
+                else:
+                    print("🔍 DEBUG: Raw response content unavailable or non-text")
+                    print(f"🔍 DEBUG: Content text type: {type(content_text)}")
+                    print(f"🔍 DEBUG: Content text value: {content_text}")
+
+            if not isinstance(content_text, str) or not content_text.strip():
+                # Check if this is an error response
+                if hasattr(response, 'error') and response.error:
+                    raise Exception(f"Server error: {response.error}")
+                elif hasattr(response, 'choices') and response.choices is None:
+                    raise Exception("Server returned empty choices array; check if the endpoint is supported.")
+                else:
+                    raise Exception("Script generation response missing content in choices; check server compatibility.")
 
             # Extract the generated response
-            raw_response = response.choices[0].message.content.strip()
+            raw_response = content_text.strip()
             
             # Parse JSON response with robust error handling
             parsed_response = self._parse_json_response(raw_response)
@@ -1880,6 +1989,38 @@ def parse_args():
         action="store_true",
         help="Load On Demand: Skip model loading on startup, load models when needed",
     )
+    parser.add_argument(
+        "--script-ai-url", "--script_ai_url",
+        dest="script_ai_url",
+        type=str,
+        default=None,
+        help="Base URL for OpenAI-compatible script generation server (e.g., http://localhost:11434/v1)",
+    )
+    parser.add_argument(
+        "--script-ai-model", "--script_ai_model",
+        dest="script_ai_model",
+        type=str,
+        default=None,
+        help="Model name for script generation (e.g., gpt-4.1-mini or myorg/model)",
+    )
+    parser.add_argument(
+        "--script-ai-api-key", "--script_ai_api_key",
+        dest="script_ai_api_key",
+        type=str,
+        default=None,
+        help="API key for script generation service (optional for local servers)",
+    )
+    parser.add_argument(
+        "--hf-offline",
+        action="store_true",
+        help="Enable offline mode for Hugging Face downloads (local cache only)",
+    )
+    parser.add_argument(
+        "--hf-cache-dir",
+        type=str,
+        default=None,
+        help="Custom cache directory for Hugging Face models/processors",
+    )
     
     return parser.parse_args()
 
@@ -1927,7 +2068,12 @@ def main():
         device=args.device,
         inference_steps=args.inference_steps,
         debug=args.debug,
-        load_on_demand=args.lod
+        load_on_demand=args.lod,
+        script_ai_url=args.script_ai_url,
+        script_ai_model=args.script_ai_model,
+        script_ai_api_key=args.script_ai_api_key,
+        hf_offline=bool(args.hf_offline),
+        hf_cache_dir=args.hf_cache_dir,
     )
     
     # Create interface

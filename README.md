@@ -26,8 +26,10 @@ A comprehensive Gradio interface for generating high-quality multi-speaker dialo
 - **Model Selection**: Choose between VibeVoice-7B-Preview and VibeVoice-1.5B models
 - **Voice Normalization**: Automatically normalize voice sample volumes for consistent audio quality
 - **Advanced Settings**: Fine-tune generation parameters (CFG scale, diffusion steps, temperature, etc.)
-- **AI Script Generation**: Generate dialogue scripts using OpenAI GPT-4o-mini (requires API key)
+- **AI Script Generation**: Generate dialogue scripts using OpenAI GPT-4.1-mini or compatible servers
+- **OpenAI-Compatible Servers**: Support for local and third-party OAI-compatible LLM servers
 - **Load-on-Demand**: Option to load models only when needed to save VRAM
+- **Offline Mode**: Run without internet using cached Hugging Face models
 - **Streaming Audio**: Real-time audio generation with live streaming support
 - **Custom Voices**: Support for custom voice samples in organized subdirectories
 
@@ -45,14 +47,94 @@ python main.py --debug
 
 # Custom port
 python main.py --port 8080
+
+# Use local OpenAI-compatible server
+python main.py --lod --debug \
+  --script-ai-url "http://localhost:11434/v1" \
+  --script_ai_model "qwen2.5:7b-instruct" \
+  --script_ai_api_key ""
+
+# Use offline mode for Hugging Face models
+python main.py --lod --hf-offline
+
+# Custom cache directory
+python main.py --lod --hf-cache-dir "/path/to/cache"
 ```
 
 ### 🔧 Setup
 
 1. **Install dependencies**: Follow the installation instructions below
-2. **Add OpenAI API key**: Create a `.env` file with `OPENAI_API_KEY=your_key_here` for AI script generation
+2. **Add API keys**: Create a `.env` file with your preferred configuration
 3. **Add custom voices**: Place voice samples in the `custom_voices/` directory (supports subdirectories)
 4. **Run the interface**: Execute `python main.py`
+
+### 🤖 AI Script Generation
+
+VibeVoice supports AI-powered script generation using OpenAI or compatible servers. You can configure this via CLI arguments or environment variables.
+
+#### OpenAI Platform (Default)
+```bash
+# .env file
+OPENAI_API_KEY=sk-your-openai-key-here
+OPENAI_MODEL=gpt-4.1-mini  # Optional: change default model
+```
+
+#### OpenAI-Compatible Servers
+Support for local and third-party servers (Ollama, LM Studio, vLLM, etc.):
+
+**Via CLI (temporary):**
+```bash
+# Local Ollama server
+python main.py --lod --debug \
+  --script-ai-url "http://localhost:11434/v1" \
+  --script_ai_model "qwen2.5:7b-instruct" \
+  --script_ai-api-key ""
+
+# Remote server with API key
+python main.py --lod --debug \
+  --script-ai-url "https://api.example.com/v1" \
+  --script_ai_model "myorg/model-name" \
+  --script_ai-api-key "your-api-key"
+```
+
+**Via .env file (persistent):**
+```bash
+# .env file
+SCRIPT_AI_URL=http://localhost:11434/v1
+SCRIPT_AI_MODEL=qwen2.5:7b-instruct
+SCRIPT_AI_API_KEY=
+
+# Optional: override default OpenAI model
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+#### Configuration Precedence
+Settings are applied in this order (later overrides earlier):
+1. **Defaults**: `gpt-4.1-mini` model, OpenAI platform
+2. **Environment variables**: `.env` file settings
+3. **CLI arguments**: Command-line flags (highest priority)
+
+#### Supported Server Features
+- **Chat Completions**: Full support for `/v1/chat/completions` endpoint
+- **Multiple Response Formats**: Handles `choices[].message.content`, `choices[].text`, and `choices[].content`
+- **Auto URL Normalization**: Automatically appends `/v1` if missing
+- **Flexible API Keys**: Empty keys supported for local servers
+
+### 🔄 Offline Mode
+
+Run VibeVoice without internet access using cached models:
+
+```bash
+# Force offline mode
+python main.py --lod --hf-offline
+
+# Use custom cache directory
+python main.py --lod --hf-offline --hf-cache-dir "/shared/cache"
+
+# Environment variable (alternative)
+export HF_HUB_OFFLINE=1
+python main.py --lod
+```
 
 ### 📁 Voice Organization
 
@@ -61,14 +143,24 @@ python main.py --port 8080
 - **Subdirectories**: Organize voices into subdirectories (e.g., `custom_voices/characters/`, `custom_voices/narrators/`)
 - **Supported formats**: WAV, MP3, FLAC, OGG, M4A, AAC
 
-### 🔑 API Key Requirement
+### 🔑 API Key Requirements
 
-The AI script generation feature requires an OpenAI API key. Add it to a `.env` file:
-```
-OPENAI_API_KEY=your_openai_api_key_here
-```
+**OpenAI Platform**: Requires `OPENAI_API_KEY` in `.env` file
+**Custom Servers**: API key optional (many local servers don't require one)
 
-*Note: Support for OAI-compatible servers and alternative models will be added soon.*
+Example `.env` file:
+```bash
+# OpenAI platform (required for default)
+OPENAI_API_KEY=sk-your-openai-key-here
+
+# Custom server (optional)
+SCRIPT_AI_URL=http://localhost:11434/v1
+SCRIPT_AI_MODEL=qwen2.5:7b-instruct
+SCRIPT_AI_API_KEY=
+
+# Default model override (optional)
+OPENAI_MODEL=gpt-4.1-mini
+```
 
 ---
 
