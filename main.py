@@ -187,18 +187,42 @@ class VibeVoiceDemo:
                     local_files_only=True,
                     cache_dir=cache_dir,
                 )
-                self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                    "WestZhang/VibeVoice-Large-pt",
-                    torch_dtype=torch.bfloat16,
-                    device_map=self.device,
-                    attn_implementation=attn_implementation,
-                    local_files_only=True,
-                    cache_dir=cache_dir,
-                )
-                print("✅ Successfully loaded legacy WestZhang model from local cache")
-                self.model.eval()
-                self.model_loaded = True
-                return
+                try:
+                    self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                        "WestZhang/VibeVoice-Large-pt",
+                        torch_dtype=torch.bfloat16,
+                        device_map=self.device,
+                        attn_implementation=attn_implementation,
+                        local_files_only=True,
+                        cache_dir=cache_dir,
+                    )
+                    self.model.eval()
+                    print("✅ Successfully loaded legacy WestZhang model from local cache")
+                    self.model_loaded = True
+                    return
+                except Exception as legacy_error:
+                    # If the primary attention implementation fails, try SDPA fallback
+                    if attn_implementation != "sdpa":
+                        print(f"⚠️ {attn_implementation} failed for legacy model, falling back to SDPA: {legacy_error}")
+                        try:
+                            self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                                "WestZhang/VibeVoice-Large-pt",
+                                torch_dtype=torch.bfloat16,
+                                device_map=self.device,
+                                attn_implementation="sdpa",
+                                local_files_only=True,
+                                cache_dir=cache_dir,
+                            )
+                            self.model.eval()
+                            print("✅ Successfully loaded legacy WestZhang model with SDPA fallback")
+                            self.model_loaded = True
+                            return
+                        except Exception as legacy_fallback_error:
+                            print(f"❌ Both {attn_implementation} and SDPA failed for legacy model: {legacy_fallback_error}")
+                            # Continue to the main fallback mechanism
+                    else:
+                        # SDPA already failed, continue to the main fallback mechanism
+                        print(f"❌ SDPA failed for legacy model: {legacy_error}")
             except Exception as e:
                 print(f"⚠️ Legacy model not found in local cache: {e}")
                 print("🔄 Falling back to new vibevoice/VibeVoice-7B repository...")
@@ -212,16 +236,44 @@ class VibeVoiceDemo:
                 cache_dir=cache_dir,
             )
 
-            # Load model
-            self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                model_path_to_use,
-                torch_dtype=torch.bfloat16,
-                device_map=self.device,
-                attn_implementation=attn_implementation,
-                local_files_only=bool(offline_mode),
-                cache_dir=cache_dir,
-            )
-            self.model.eval()
+            # Load model with fallback mechanism
+            try:
+                self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                    model_path_to_use,
+                    torch_dtype=torch.bfloat16,
+                    device_map=self.device,
+                    attn_implementation=attn_implementation,
+                    local_files_only=bool(offline_mode),
+                    cache_dir=cache_dir,
+                )
+                self.model.eval()
+            except Exception as model_error:
+                # If the primary attention implementation fails, try SDPA fallback
+                if attn_implementation != "sdpa":
+                    print(f"⚠️ {attn_implementation} failed, falling back to SDPA: {model_error}")
+                    try:
+                        self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                            model_path_to_use,
+                            torch_dtype=torch.bfloat16,
+                            device_map=self.device,
+                            attn_implementation="sdpa",
+                            local_files_only=bool(offline_mode),
+                            cache_dir=cache_dir,
+                        )
+                        self.model.eval()
+                        print("✅ Successfully loaded model with SDPA fallback")
+                    except Exception as fallback_error:
+                        print(f"❌ Both {attn_implementation} and SDPA failed: {fallback_error}")
+                        if offline_mode:
+                            raise gr.Error(f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}")
+                        else:
+                            raise fallback_error
+                else:
+                    # SDPA already failed, re-raise the original error
+                    if offline_mode:
+                        raise gr.Error(f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}")
+                    else:
+                        raise model_error
         except Exception as e:
             if offline_mode:
                 raise gr.Error(f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}")
@@ -910,7 +962,7 @@ class VibeVoiceDemo:
                     print(f"❌ Google Gemini API Error: {error_msg}")
                     print("💡 Troubleshooting tips for Google Gemini:")
                     print("   1. Verify your API key is correct")
-                    print("   2. Check that the model name is valid (e.g., 'gemini-2.0-flash-exp', 'gemini-1.5-pro')")
+                    print("   2. Check that the model name is valid (e.g., 'gemini-2.5-flash', 'gemini-1.5-pro')")
                     print("   3. Ensure the endpoint URL is correct")
                     print("   4. Check your Google Cloud project permissions")
                 else:

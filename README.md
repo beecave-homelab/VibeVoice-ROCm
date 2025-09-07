@@ -66,7 +66,9 @@ python main.py --lod --hf-cache-dir "/path/to/cache"
 1. **Install dependencies**: Follow the installation instructions below
 2. **Configure API keys**: Copy `.env-sample` to `.env` and add your API keys
 3. **Add custom voices**: Place voice samples in the `custom_voices/` directory (supports subdirectories)
-4. **Run the interface**: Execute `python main.py`
+4. **Run the interface**: 
+   - **Windows**: Double-click `run_vibevoice.bat` (easiest)
+   - **Other platforms**: Execute `python main.py`
 
 ### 🤖 AI Script Generation
 
@@ -104,7 +106,7 @@ python main.py --lod --debug \
 # Google Gemini API
 python main.py --lod --debug \
   --script-ai-url "https://generativelanguage.googleapis.com/v1beta/openai" \
-  --script_ai_model "gemini-2.0-flash-exp" \
+  --script_ai_model "gemini-2.5-flash" \
   --script_ai-api-key "your-gemini-api-key"
 ```
 
@@ -171,7 +173,7 @@ SCRIPT_AI_API_KEY=
 
 # Google Gemini API (alternative)
 # SCRIPT_AI_URL=https://generativelanguage.googleapis.com/v1beta/openai
-# SCRIPT_AI_MODEL=gemini-2.0-flash-exp
+# SCRIPT_AI_MODEL=gemini-2.5-flash
 # SCRIPT_AI_API_KEY=your-gemini-api-key
 
 # Default model override (optional)
@@ -295,6 +297,10 @@ sudo docker run --privileged --net=host --ipc=host --ulimit memlock=-1:-1 --ulim
 git clone https://github.com/microsoft/VibeVoice.git
 cd VibeVoice/
 
+# Create and activate virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 # Install PyTorch with CUDA support (required for this application)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
@@ -317,6 +323,10 @@ If you prefer not to use Docker, you can install directly on your system:
 # Clone the repository
 git clone https://github.com/microsoft/VibeVoice.git
 cd VibeVoice/
+
+# Create and activate virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install PyTorch with CUDA support (required for this application)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
@@ -343,10 +353,25 @@ VibeVoice now supports multiple device types with automatic fallback mechanisms:
 - **Apple Silicon (MPS)**: Native support for M1/M2/M3 Macs using Metal Performance Shaders
 - **CPU**: Fallback support for systems without GPU acceleration
 - **Windows**: Pre-built FlashAttention2 wheels available for easier installation
+- **Robust Fallback**: If FlashAttention2 fails, automatically falls back to SDPA
 
-The application automatically detects your hardware and uses the best available attention implementation:
-- `flash_attention_2` for CUDA (if available)
-- `sdpa` (Scaled Dot Product Attention) for MPS and CPU fallback
+### 🪟 Windows Quick Start
+
+For Windows users, we provide a convenient batch script to launch VibeVoice:
+
+1. **Install dependencies** (follow installation instructions above)
+2. **Configure API keys**: Copy `.env-sample` to `.env` and add your keys
+3. **Double-click** `run_vibevoice.bat` to launch
+
+The batch script will:
+- ✅ Check for virtual environment
+- ✅ Activate the virtual environment automatically  
+- ✅ Launch VibeVoice on `http://localhost:7590`
+- ✅ Provide helpful error messages if setup is incomplete
+
+**Load-on-Demand Mode**: To use faster startup (loads model when needed), edit `run_vibevoice.bat`:
+- Comment out: `python main.py`
+- Uncomment: `python main.py --lod`
 
 ## Usages
 
