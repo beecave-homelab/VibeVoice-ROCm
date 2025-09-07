@@ -21,9 +21,9 @@ try:
     from openai import OpenAI
     import dotenv
     OPENAI_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     OPENAI_AVAILABLE = False
-    print("Warning: OpenAI package not available. AI script generation will use fallback.")
+    print(f"Warning: OpenAI package not available ({e}). AI script generation will use fallback.")
 
 # Device detection and attention mechanism fallback
 def detect_device():
@@ -872,10 +872,6 @@ class VibeVoiceDemo:
     def generate_sample_script_llm(self, topic: str = "", num_speakers: int = 2, style: str = "casual", context: str = "", speaker_names: list = None) -> tuple[str, str, str]:
         """Generate a sample conversation script using OpenAI GPT-4o-mini with simplified approach."""
         try:
-            # OpenAI must be available
-            if not OPENAI_AVAILABLE:
-                raise Exception("OpenAI package not available. Please install openai package and set OPENAI_API_KEY.")
-
             # Load environment variables from .env file
             dotenv.load_dotenv()
 
@@ -888,6 +884,21 @@ class VibeVoiceDemo:
             effective_base_url = self.script_ai_url or env_base_url
             effective_model = self.script_ai_model or env_model or env_openai_model_default
             effective_api_key = self.script_ai_api_key or env_script_api_key or (os.getenv('OPENAI_API_KEY') or "").strip()
+
+            # Check if we need OpenAI package (only when not using custom base URL)
+            if not effective_base_url and not OPENAI_AVAILABLE:
+                raise Exception("OpenAI package not available. Please install openai package and set OPENAI_API_KEY.")
+            
+            # If using custom base URL but OpenAI package is not available, we still need it for the client
+            if effective_base_url and not OPENAI_AVAILABLE:
+                raise Exception("OpenAI package not available. Please install openai package to use custom API endpoints.")
+            
+            # Debug information
+            if self.debug:
+                print(f"🔍 DEBUG: OPENAI_AVAILABLE = {OPENAI_AVAILABLE}")
+                print(f"🔍 DEBUG: effective_base_url = {effective_base_url}")
+                print(f"🔍 DEBUG: effective_model = {effective_model}")
+                print(f"🔍 DEBUG: effective_api_key = {'Yes' if effective_api_key else 'No'}")
 
             # If using OpenAI platform (no custom base URL), require an API key
             if not effective_base_url and not effective_api_key:
