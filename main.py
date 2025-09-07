@@ -182,12 +182,14 @@ class VibeVoiceDemo:
             try:
                 # First try to load from local cache (legacy support)
                 print("📁 Attempting to load from local cache (legacy WestZhang model)...")
-                self.processor = VibeVoiceProcessor.from_pretrained(
-                    "WestZhang/VibeVoice-Large-pt",
-                    local_files_only=True,
-                    cache_dir=cache_dir,
-                )
+                
+                # Try to load both processor and model together
                 try:
+                    self.processor = VibeVoiceProcessor.from_pretrained(
+                        "WestZhang/VibeVoice-Large-pt",
+                        local_files_only=True,
+                        cache_dir=cache_dir,
+                    )
                     self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                         "WestZhang/VibeVoice-Large-pt",
                         torch_dtype=torch.bfloat16,
@@ -223,6 +225,7 @@ class VibeVoiceDemo:
                     else:
                         # SDPA already failed, continue to the main fallback mechanism
                         print(f"❌ SDPA failed for legacy model: {legacy_error}")
+                        
             except Exception as e:
                 print(f"⚠️ Legacy model not found in local cache: {e}")
                 print("🔄 Falling back to new vibevoice/VibeVoice-7B repository...")
