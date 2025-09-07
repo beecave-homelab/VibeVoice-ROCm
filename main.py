@@ -179,57 +179,57 @@ class VibeVoiceDemo:
         model_path_to_use = self.model_path
         if self.model_path == "WestZhang/VibeVoice-Large-pt":
             print("🔄 Detected legacy 7B model path. Attempting fallback mechanism...")
+            print("📁 Attempting to load from local cache (legacy WestZhang model)...")
+            
+            # Try to load legacy model from local cache
+            legacy_loaded = False
             try:
-                # First try to load from local cache (legacy support)
-                print("📁 Attempting to load from local cache (legacy WestZhang model)...")
-                
-                # Try to load both processor and model together
-                try:
-                    self.processor = VibeVoiceProcessor.from_pretrained(
-                        "WestZhang/VibeVoice-Large-pt",
-                        local_files_only=True,
-                        cache_dir=cache_dir,
-                    )
-                    self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                        "WestZhang/VibeVoice-Large-pt",
-                        torch_dtype=torch.bfloat16,
-                        device_map=self.device,
-                        attn_implementation=attn_implementation,
-                        local_files_only=True,
-                        cache_dir=cache_dir,
-                    )
-                    self.model.eval()
-                    print("✅ Successfully loaded legacy WestZhang model from local cache")
-                    self.model_loaded = True
-                    return
-                except Exception as legacy_error:
-                    # If the primary attention implementation fails, try SDPA fallback
-                    if attn_implementation != "sdpa":
-                        print(f"⚠️ {attn_implementation} failed for legacy model, falling back to SDPA: {legacy_error}")
-                        try:
-                            self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                                "WestZhang/VibeVoice-Large-pt",
-                                torch_dtype=torch.bfloat16,
-                                device_map=self.device,
-                                attn_implementation="sdpa",
-                                local_files_only=True,
-                                cache_dir=cache_dir,
-                            )
-                            self.model.eval()
-                            print("✅ Successfully loaded legacy WestZhang model with SDPA fallback")
-                            self.model_loaded = True
-                            return
-                        except Exception as legacy_fallback_error:
-                            print(f"❌ Both {attn_implementation} and SDPA failed for legacy model: {legacy_fallback_error}")
-                            # Continue to the main fallback mechanism
-                    else:
-                        # SDPA already failed, continue to the main fallback mechanism
-                        print(f"❌ SDPA failed for legacy model: {legacy_error}")
-                        
-            except Exception as e:
-                print(f"⚠️ Legacy model not found in local cache: {e}")
+                self.processor = VibeVoiceProcessor.from_pretrained(
+                    "WestZhang/VibeVoice-Large-pt",
+                    local_files_only=True,
+                    cache_dir=cache_dir,
+                )
+                self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                    "WestZhang/VibeVoice-Large-pt",
+                    torch_dtype=torch.bfloat16,
+                    device_map=self.device,
+                    attn_implementation=attn_implementation,
+                    local_files_only=True,
+                    cache_dir=cache_dir,
+                )
+                self.model.eval()
+                print("✅ Successfully loaded legacy WestZhang model from local cache")
+                self.model_loaded = True
+                legacy_loaded = True
+            except Exception as legacy_error:
+                # If the primary attention implementation fails, try SDPA fallback
+                if attn_implementation != "sdpa":
+                    print(f"⚠️ {attn_implementation} failed for legacy model, falling back to SDPA: {legacy_error}")
+                    try:
+                        self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                            "WestZhang/VibeVoice-Large-pt",
+                            torch_dtype=torch.bfloat16,
+                            device_map=self.device,
+                            attn_implementation="sdpa",
+                            local_files_only=True,
+                            cache_dir=cache_dir,
+                        )
+                        self.model.eval()
+                        print("✅ Successfully loaded legacy WestZhang model with SDPA fallback")
+                        self.model_loaded = True
+                        legacy_loaded = True
+                    except Exception as legacy_fallback_error:
+                        print(f"❌ Both {attn_implementation} and SDPA failed for legacy model: {legacy_fallback_error}")
+                else:
+                    print(f"❌ SDPA failed for legacy model: {legacy_error}")
+            
+            # If legacy loading failed, fall back to new repository
+            if not legacy_loaded:
+                print("⚠️ Legacy model not found in local cache")
                 print("🔄 Falling back to new vibevoice/VibeVoice-7B repository...")
                 model_path_to_use = "vibevoice/VibeVoice-7B"
+            else:
+                return
 
         try:
             # Load processor
