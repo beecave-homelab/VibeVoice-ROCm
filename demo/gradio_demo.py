@@ -48,15 +48,41 @@ class VibeVoiceDemo:
         """Load the VibeVoice model and processor."""
         print(f"Loading processor & model from {self.model_path}")
         
+        # Handle 7B model fallback for legacy support
+        model_path_to_use = self.model_path
+        if self.model_path == "WestZhang/VibeVoice-Large-pt":
+            print("🔄 Detected legacy 7B model path. Attempting fallback mechanism...")
+            try:
+                # First try to load from local cache (legacy support)
+                print("📁 Attempting to load from local cache (legacy WestZhang model)...")
+                self.processor = VibeVoiceProcessor.from_pretrained(
+                    "WestZhang/VibeVoice-Large-pt",
+                    local_files_only=True,
+                )
+                self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                    "WestZhang/VibeVoice-Large-pt",
+                    torch_dtype=torch.bfloat16,
+                    device_map='cuda',
+                    attn_implementation='flash_attention_2',
+                    local_files_only=True,
+                )
+                print("✅ Successfully loaded legacy WestZhang model from local cache")
+                self.model.eval()
+                return
+            except Exception as e:
+                print(f"⚠️ Legacy model not found in local cache: {e}")
+                print("🔄 Falling back to new vibevoice/VibeVoice-7B repository...")
+                model_path_to_use = "vibevoice/VibeVoice-7B"
+        
         # Load processor
         self.processor = VibeVoiceProcessor.from_pretrained(
-            self.model_path,
+            model_path_to_use,
         )
         
         # Load model
         try:
             self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                self.model_path,
+                model_path_to_use,
                 torch_dtype=torch.bfloat16,
                 device_map='cuda',
                 attn_implementation='flash_attention_2' # flash_attention_2 is recommended
@@ -66,7 +92,7 @@ class VibeVoiceDemo:
             print(traceback.format_exc())
             print("Error loading the model. Trying to use SDPA. However, note that only flash_attention_2 has been fully tested, and using SDPA may result in lower audio quality.")
             self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                self.model_path,
+                model_path_to_use,
                 torch_dtype=torch.bfloat16,
                 device_map='cuda',
                 attn_implementation='sdpa'

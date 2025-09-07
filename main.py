@@ -61,7 +61,7 @@ class VibeVoiceDemo:
 
         # Available models
         self.available_models = {
-            "WestZhang/VibeVoice-Large-pt": "WestZhang/VibeVoice-Large-pt",
+            "WestZhang/VibeVoice-Large-pt": "vibevoice/VibeVoice-7B",  # Legacy support with fallback
             "microsoft/VibeVoice-1.5B": "microsoft/VibeVoice-1.5B"
         }
 
@@ -132,17 +132,46 @@ class VibeVoiceDemo:
         offline_mode = self.hf_offline if self.hf_offline is not None else (hf_offline_env == '1' or (hf_offline_env or '').lower() in ['true', 'yes'])
         cache_dir = self.hf_cache_dir or os.getenv('HF_HOME') or os.getenv('TRANSFORMERS_CACHE') or None
 
+        # Handle 7B model fallback for legacy support
+        model_path_to_use = self.model_path
+        if self.model_path == "WestZhang/VibeVoice-Large-pt":
+            print("🔄 Detected legacy 7B model path. Attempting fallback mechanism...")
+            try:
+                # First try to load from local cache (legacy support)
+                print("📁 Attempting to load from local cache (legacy WestZhang model)...")
+                self.processor = VibeVoiceProcessor.from_pretrained(
+                    "WestZhang/VibeVoice-Large-pt",
+                    local_files_only=True,
+                    cache_dir=cache_dir,
+                )
+                self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                    "WestZhang/VibeVoice-Large-pt",
+                    torch_dtype=torch.bfloat16,
+                    device_map='cuda',
+                    attn_implementation="flash_attention_2",
+                    local_files_only=True,
+                    cache_dir=cache_dir,
+                )
+                print("✅ Successfully loaded legacy WestZhang model from local cache")
+                self.model.eval()
+                self.model_loaded = True
+                return
+            except Exception as e:
+                print(f"⚠️ Legacy model not found in local cache: {e}")
+                print("🔄 Falling back to new vibevoice/VibeVoice-7B repository...")
+                model_path_to_use = "vibevoice/VibeVoice-7B"
+
         try:
             # Load processor
             self.processor = VibeVoiceProcessor.from_pretrained(
-                self.model_path,
+                model_path_to_use,
                 local_files_only=bool(offline_mode),
                 cache_dir=cache_dir,
             )
 
             # Load model
             self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                self.model_path,
+                model_path_to_use,
                 torch_dtype=torch.bfloat16,
                 device_map='cuda',
                 attn_implementation="flash_attention_2",
@@ -2059,7 +2088,7 @@ def main():
 
     # Set default model to large model if not specified
     if args.model_path == "/tmp/vibevoice-model":
-        args.model_path = "WestZhang/VibeVoice-Large-pt"
+        args.model_path = "WestZhang/VibeVoice-Large-pt"  # Legacy path with fallback support
         print(f"🎯 Auto-selecting large model: {args.model_path}")
 
     # Initialize demo instance

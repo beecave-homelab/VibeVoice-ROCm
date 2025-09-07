@@ -178,7 +178,7 @@ The model can synthesize speech up to **90 minutes** long with up to **4 distinc
 
 ### 🔥 News
 
-- **[2025-08-26] 🎉 We Opensource the [VibeVoice-7B-Preview](https://huggingface.co/WestZhang/VibeVoice-Large-pt) model weights!**
+- **[2025-08-26] 🎉 We Opensource the [VibeVoice-7B-Preview](https://huggingface.co/vibevoice/VibeVoice-7B) model weights!**
 
 ### 📋 TODO
 
@@ -240,7 +240,7 @@ Try your own samples at [Colab](https://colab.research.google.com/github/microso
 |-------|----------------|----------|----------|
 | VibeVoice-0.5B-Streaming | - | - | On the way |
 | VibeVoice-1.5B | 64K | ~90 min | [HF link](https://huggingface.co/microsoft/VibeVoice-1.5B) |
-| VibeVoice-7B-Preview| 32K | ~45 min | [HF link](https://huggingface.co/WestZhang/VibeVoice-Large-pt) |
+| VibeVoice-7B-Preview| 32K | ~45 min | [HF link](https://huggingface.co/vibevoice/VibeVoice-7B) |
 
 ## Installation
 We recommend to use NVIDIA Deep Learning Container to manage the CUDA environment. 
@@ -279,6 +279,13 @@ sudo docker run --privileged --net=host --ipc=host --ulimit memlock=-1:-1 --ulim
 git clone https://github.com/microsoft/VibeVoice.git
 cd VibeVoice/
 
+# Install PyTorch with CUDA support (required for this application)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install OpenAI (required for AI script generation)
+pip install openai
+
+# Install the VibeVoice package
 pip install -e .
 ```
 
@@ -289,6 +296,12 @@ If you prefer not to use Docker, you can install directly on your system:
 # Clone the repository
 git clone https://github.com/microsoft/VibeVoice.git
 cd VibeVoice/
+
+# Install PyTorch with CUDA support (required for this application)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install OpenAI (required for AI script generation)
+pip install openai
 
 # Install dependencies
 pip install -e .

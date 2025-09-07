@@ -243,32 +243,65 @@ def main():
     
     # Load processor
     print(f"Loading processor & model from {args.model_path}")
-    processor = VibeVoiceProcessor.from_pretrained(args.model_path)
+    
+    # Handle 7B model fallback for legacy support
+    model_path_to_use = args.model_path
+    goto_generation = False
+    if args.model_path == "WestZhang/VibeVoice-Large-pt":
+        print("🔄 Detected legacy 7B model path. Attempting fallback mechanism...")
+        try:
+            # First try to load from local cache (legacy support)
+            print("📁 Attempting to load from local cache (legacy WestZhang model)...")
+            processor = VibeVoiceProcessor.from_pretrained(
+                "WestZhang/VibeVoice-Large-pt",
+                local_files_only=True,
+            )
+            model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                "WestZhang/VibeVoice-Large-pt",
+                torch_dtype=torch.bfloat16,
+                device_map='cuda',
+                attn_implementation='flash_attention_2',
+                local_files_only=True,
+            )
+            print("✅ Successfully loaded legacy WestZhang model from local cache")
+            model.eval()
+            model.set_ddpm_inference_steps(num_steps=10)
+            if hasattr(model.model, 'language_model'):
+                print(f"Language model attention: {model.model.language_model.config._attn_implementation}")
+            # Skip the rest of the loading logic since we already loaded
+            goto_generation = True
+        except Exception as e:
+            print(f"⚠️ Legacy model not found in local cache: {e}")
+            print("🔄 Falling back to new vibevoice/VibeVoice-7B repository...")
+            model_path_to_use = "vibevoice/VibeVoice-7B"
+    
+    if not goto_generation:
+        processor = VibeVoiceProcessor.from_pretrained(model_path_to_use)
 
-    # Load model
-    try:
-        model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-            args.model_path,
-            torch_dtype=torch.bfloat16,
-            device_map='cuda',
-            attn_implementation='flash_attention_2' # flash_attention_2 is recommended
-        )
-    except Exception as e:
-        print(f"[ERROR] : {type(e).__name__}: {e}")
-        print(traceback.format_exc())
-        print("Error loading the model. Trying to use SDPA. However, note that only flash_attention_2 has been fully tested, and using SDPA may result in lower audio quality.")
-        model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-            args.model_path,
-            torch_dtype=torch.bfloat16,
-            device_map='cuda',
-            attn_implementation='sdpa'
-        )
+        # Load model
+        try:
+            model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                model_path_to_use,
+                torch_dtype=torch.bfloat16,
+                device_map='cuda',
+                attn_implementation='flash_attention_2' # flash_attention_2 is recommended
+            )
+        except Exception as e:
+            print(f"[ERROR] : {type(e).__name__}: {e}")
+            print(traceback.format_exc())
+            print("Error loading the model. Trying to use SDPA. However, note that only flash_attention_2 has been fully tested, and using SDPA may result in lower audio quality.")
+            model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                model_path_to_use,
+                torch_dtype=torch.bfloat16,
+                device_map='cuda',
+                attn_implementation='sdpa'
+            )
 
-    model.eval()
-    model.set_ddpm_inference_steps(num_steps=10)
+        model.eval()
+        model.set_ddpm_inference_steps(num_steps=10)
 
-    if hasattr(model.model, 'language_model'):
-       print(f"Language model attention: {model.model.language_model.config._attn_implementation}")
+        if hasattr(model.model, 'language_model'):
+           print(f"Language model attention: {model.model.language_model.config._attn_implementation}")
        
     # Prepare inputs for the model
     inputs = processor(
