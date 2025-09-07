@@ -969,29 +969,50 @@ class VibeVoiceDemo:
                 print(f"🔍 DEBUG: {user_message}")
                 print("🔍 DEBUG: === END OF RAW MESSAGES ===")
 
-            try:
-                response = client.chat.completions.create(
-                    model=effective_model,
-                    messages=[
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": user_message}
-                    ],
-                    max_tokens=2000,  # Allow longer scripts (up to ~5 minutes of content)
-                    temperature=0.6,  # Lower temperature for more consistent formatting
-                    top_p=0.85
-                )
-            except Exception as api_error:
-                error_msg = str(api_error)
-                if 'generativelanguage.googleapis.com' in (effective_base_url or ''):
-                    print(f"❌ Google Gemini API Error: {error_msg}")
-                    print("💡 Troubleshooting tips for Google Gemini:")
-                    print("   1. Verify your API key is correct")
-                    print("   2. Check that the model name is valid (e.g., 'gemini-2.5-flash', 'gemini-1.5-pro')")
-                    print("   3. Ensure the endpoint URL is correct")
-                    print("   4. Check your Google Cloud project permissions")
-                else:
-                    print(f"❌ API Error: {error_msg}")
-                raise api_error
+            # Retry logic for API calls
+            max_retries = 3
+            retry_delay = 1  # seconds
+            response = None
+            
+            for attempt in range(max_retries):
+                try:
+                    if self.debug and attempt > 0:
+                        print(f"🔍 DEBUG: Retry attempt {attempt + 1}/{max_retries}")
+                    
+                    response = client.chat.completions.create(
+                        model=effective_model,
+                        messages=[
+                            {"role": "system", "content": system_message},
+                            {"role": "user", "content": user_message}
+                        ],
+                        max_tokens=4000,  # Increased from 2000 to handle longer responses
+                        temperature=0.6,  # Lower temperature for more consistent formatting
+                        top_p=0.85
+                    )
+                    break  # Success, exit retry loop
+                    
+                except Exception as api_error:
+                    error_msg = str(api_error)
+                    if self.debug:
+                        print(f"🔍 DEBUG: API call attempt {attempt + 1} failed: {error_msg}")
+                    
+                    # If this is the last attempt, raise the error
+                    if attempt == max_retries - 1:
+                        if 'generativelanguage.googleapis.com' in (effective_base_url or ''):
+                            print(f"❌ Google Gemini API Error (after {max_retries} attempts): {error_msg}")
+                            print("💡 Troubleshooting tips for Google Gemini:")
+                            print("   1. Verify your API key is correct")
+                            print("   2. Check that the model name is valid (e.g., 'gemini-2.5-flash', 'gemini-1.5-pro')")
+                            print("   3. Ensure the endpoint URL is correct")
+                            print("   4. Check your Google Cloud project permissions")
+                        else:
+                            print(f"❌ API Error (after {max_retries} attempts): {error_msg}")
+                        raise api_error
+                    
+                    # Wait before retrying
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
 
             # Safely log and extract content for OpenAI-compatible servers
             total_tokens = None
@@ -1060,6 +1081,56 @@ class VibeVoiceDemo:
                     raise Exception(f"Server error: {response.error}")
                 elif hasattr(response, 'choices') and response.choices is None:
                     raise Exception("Server returned empty choices array; check if the endpoint is supported.")
+                elif hasattr(response, 'choices') and len(response.choices) > 0:
+                    choice = response.choices[0]
+                    if hasattr(choice, 'finish_reason') and choice.finish_reason == 'length':
+                        # Try to generate a shorter response by reducing the input
+                        print("⚠️ Response was truncated due to token limit. Attempting to generate shorter response...")
+                        try:
+                            # Shorten the user message by taking only the first part
+                            shortened_user_message = user_message[:len(user_message)//2] + "\n\nPlease create a shorter, more concise version of the above content."
+                            
+                            if self.debug:
+                                print(f"🔍 DEBUG: Retrying with shortened prompt (length: {len(shortened_user_message)} vs {len(user_message)})")
+                            
+                            response = client.chat.completions.create(
+                                model=effective_model,
+                                messages=[
+                                    {"role": "system", "content": system_message},
+                                    {"role": "user", "content": shortened_user_message}
+                                ],
+                                max_tokens=4000,
+                                temperature=0.6,
+                                top_p=0.85
+                            )
+                            
+                            # Re-extract content from the retry response
+                            content_text = None
+                            try:
+                                choices = getattr(response, 'choices', None)
+                                if choices and len(choices) > 0:
+                                    choice0 = choices[0]
+                                    message = getattr(choice0, 'message', None) if not isinstance(choice0, dict) else choice0.get('message')
+                                    if message is not None:
+                                        msg_content = getattr(message, 'content', None) if not isinstance(message, dict) else message.get('content')
+                                        if isinstance(msg_content, str) and msg_content.strip():
+                                            content_text = msg_content
+                            except Exception:
+                                pass
+                            
+                            if isinstance(content_text, str) and content_text.strip():
+                                print("✅ Successfully generated shorter response")
+                            else:
+                                raise Exception("Retry with shortened prompt also failed")
+                                
+                        except Exception as retry_error:
+                            raise Exception(f"Response was truncated due to token limit and retry failed: {retry_error}")
+                    elif hasattr(choice, 'finish_reason') and choice.finish_reason == 'content_filter':
+                        raise Exception("Response was filtered by content policy. Try adjusting your prompt.")
+                    elif hasattr(choice, 'finish_reason') and choice.finish_reason == 'stop':
+                        raise Exception("Response generation was stopped unexpectedly.")
+                    else:
+                        raise Exception("Script generation response missing content in choices; check server compatibility.")
                 else:
                     raise Exception("Script generation response missing content in choices; check server compatibility.")
 
