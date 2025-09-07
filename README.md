@@ -64,13 +64,18 @@ python main.py --lod --hf-cache-dir "/path/to/cache"
 ### 🔧 Setup
 
 1. **Install dependencies**: Follow the installation instructions below
-2. **Add API keys**: Create a `.env` file with your preferred configuration
+2. **Configure API keys**: Copy `.env-sample` to `.env` and add your API keys
 3. **Add custom voices**: Place voice samples in the `custom_voices/` directory (supports subdirectories)
 4. **Run the interface**: Execute `python main.py`
 
 ### 🤖 AI Script Generation
 
 VibeVoice supports AI-powered script generation using OpenAI or compatible servers. You can configure this via CLI arguments or environment variables.
+
+#### Quick Setup
+1. **Copy the sample file**: `cp .env-sample .env`
+2. **Edit `.env`**: Add your API keys and preferred settings
+3. **Run**: `python main.py`
 
 #### OpenAI Platform (Default)
 ```bash
@@ -95,6 +100,12 @@ python main.py --lod --debug \
   --script-ai-url "https://api.example.com/v1" \
   --script_ai_model "myorg/model-name" \
   --script_ai-api-key "your-api-key"
+
+# Google Gemini API
+python main.py --lod --debug \
+  --script-ai-url "https://generativelanguage.googleapis.com/v1beta/openai" \
+  --script_ai_model "gemini-2.0-flash-exp" \
+  --script_ai-api-key "your-gemini-api-key"
 ```
 
 **Via .env file (persistent):**
@@ -157,6 +168,11 @@ OPENAI_API_KEY=sk-your-openai-key-here
 SCRIPT_AI_URL=http://localhost:11434/v1
 SCRIPT_AI_MODEL=qwen2.5:7b-instruct
 SCRIPT_AI_API_KEY=
+
+# Google Gemini API (alternative)
+# SCRIPT_AI_URL=https://generativelanguage.googleapis.com/v1beta/openai
+# SCRIPT_AI_MODEL=gemini-2.0-flash-exp
+# SCRIPT_AI_API_KEY=your-gemini-api-key
 
 # Default model override (optional)
 OPENAI_MODEL=gpt-4.1-mini

@@ -840,12 +840,18 @@ class VibeVoiceDemo:
 
             # Initialize OpenAI client
             if effective_base_url:
-                # Ensure base URL ends with /v1 for OpenAI-compatible servers
-                if not effective_base_url.endswith('/v1'):
+                # Special handling for Google Gemini API
+                if 'generativelanguage.googleapis.com' in effective_base_url:
+                    # Google Gemini API doesn't need /v1 suffix
                     if effective_base_url.endswith('/'):
-                        effective_base_url = effective_base_url + 'v1'
-                    else:
-                        effective_base_url = effective_base_url + '/v1'
+                        effective_base_url = effective_base_url.rstrip('/')
+                else:
+                    # Ensure base URL ends with /v1 for other OpenAI-compatible servers
+                    if not effective_base_url.endswith('/v1'):
+                        if effective_base_url.endswith('/'):
+                            effective_base_url = effective_base_url + 'v1'
+                        else:
+                            effective_base_url = effective_base_url + '/v1'
                 client = OpenAI(api_key=effective_api_key or "", base_url=effective_base_url)
             else:
                 client = OpenAI(api_key=effective_api_key)
@@ -854,9 +860,15 @@ class VibeVoiceDemo:
                 print("🔍 DEBUG: OpenAI-compatible client initialized successfully")
                 print(f"🔍 DEBUG: Base URL: {effective_base_url or 'OpenAI default'}")
                 print(f"🔍 DEBUG: Model: {effective_model}")
+                print(f"🔍 DEBUG: API Key provided: {'Yes' if effective_api_key else 'No'}")
                 print(f"🔍 DEBUG: Context provided: '{context[:200]}{'...' if len(context) > 200 else ''}'")
                 print(f"🔍 DEBUG: Speaker names: {speaker_names}")
                 print(f"🔍 DEBUG: Number of speakers: {num_speakers}")
+                
+                # Additional debugging for Google Gemini
+                if 'generativelanguage.googleapis.com' in (effective_base_url or ''):
+                    print("🔍 DEBUG: Detected Google Gemini API endpoint")
+                    print(f"🔍 DEBUG: Full endpoint will be: {effective_base_url}/chat/completions")
 
             # Choose system prompt based on number of speakers
             if num_speakers == 1:
@@ -881,16 +893,29 @@ class VibeVoiceDemo:
                 print(f"🔍 DEBUG: {user_message}")
                 print("🔍 DEBUG: === END OF RAW MESSAGES ===")
 
-            response = client.chat.completions.create(
-                model=effective_model,
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": user_message}
-                ],
-                max_tokens=2000,  # Allow longer scripts (up to ~5 minutes of content)
-                temperature=0.6,  # Lower temperature for more consistent formatting
-                top_p=0.85
-            )
+            try:
+                response = client.chat.completions.create(
+                    model=effective_model,
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_message}
+                    ],
+                    max_tokens=2000,  # Allow longer scripts (up to ~5 minutes of content)
+                    temperature=0.6,  # Lower temperature for more consistent formatting
+                    top_p=0.85
+                )
+            except Exception as api_error:
+                error_msg = str(api_error)
+                if 'generativelanguage.googleapis.com' in (effective_base_url or ''):
+                    print(f"❌ Google Gemini API Error: {error_msg}")
+                    print("💡 Troubleshooting tips for Google Gemini:")
+                    print("   1. Verify your API key is correct")
+                    print("   2. Check that the model name is valid (e.g., 'gemini-2.0-flash-exp', 'gemini-1.5-pro')")
+                    print("   3. Ensure the endpoint URL is correct")
+                    print("   4. Check your Google Cloud project permissions")
+                else:
+                    print(f"❌ API Error: {error_msg}")
+                raise api_error
 
             # Safely log and extract content for OpenAI-compatible servers
             total_tokens = None
