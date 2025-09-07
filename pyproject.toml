@@ -31,7 +31,8 @@ dependencies = [
     "av",
     "aiortc",
     "librosa",
-    "openai"
+    "openai",
+    "python-dotenv"
 ]
 
 

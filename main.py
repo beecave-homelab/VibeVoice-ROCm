@@ -19,11 +19,18 @@ import traceback
 # OpenAI imports
 try:
     from openai import OpenAI
-    import dotenv
     OPENAI_AVAILABLE = True
 except ImportError as e:
     OPENAI_AVAILABLE = False
     print(f"Warning: OpenAI package not available ({e}). AI script generation will use fallback.")
+
+# dotenv import
+try:
+    import dotenv
+    DOTENV_AVAILABLE = True
+except ImportError as e:
+    DOTENV_AVAILABLE = False
+    print(f"Warning: python-dotenv package not available ({e}). Environment variables will not be loaded from .env file.")
 
 # Device detection and attention mechanism fallback
 def detect_device():
@@ -873,7 +880,10 @@ class VibeVoiceDemo:
         """Generate a sample conversation script using OpenAI GPT-4o-mini with simplified approach."""
         try:
             # Load environment variables from .env file
-            dotenv.load_dotenv()
+            if DOTENV_AVAILABLE:
+                dotenv.load_dotenv()
+            else:
+                print("⚠️ python-dotenv not available, skipping .env file loading")
 
             # Resolve effective settings with precedence: Defaults -> .env -> CLI args
             env_base_url = (os.getenv('SCRIPT_AI_URL') or "").strip() or None
