@@ -10,6 +10,33 @@ from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForCondition
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from transformers.utils import logging
 
+# Device detection and attention mechanism fallback
+def detect_device():
+    """Detect the best available device (CUDA, MPS, or CPU)"""
+    if torch.cuda.is_available():
+        return "cuda", torch.cuda.get_device_name(0)
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return "mps", "Apple Silicon (MPS)"
+    else:
+        return "cpu", "CPU"
+
+def get_attention_implementation(device_type: str):
+    """Get the best available attention implementation for the device"""
+    if device_type == "cuda":
+        try:
+            # Try to import flash_attn to check if it's available
+            import flash_attn
+            return "flash_attention_2"
+        except ImportError:
+            print("⚠️ FlashAttention2 not available, falling back to SDPA")
+            return "sdpa"
+    elif device_type == "mps":
+        # Apple Silicon doesn't support flash_attention_2, use SDPA
+        return "sdpa"
+    else:
+        # CPU fallback to SDPA
+        return "sdpa"
+
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 
@@ -241,6 +268,14 @@ def main():
     full_script = '\n'.join(scripts)
     full_script = full_script.replace("’", "'")        
     
+    # Auto-detect device
+    device, device_name = detect_device()
+    print(f"🔍 Auto-detected device: {device_name}")
+    
+    # Get the best attention implementation for the device
+    attn_implementation = get_attention_implementation(device)
+    print(f"🎯 Using attention implementation: {attn_implementation}")
+    
     # Load processor
     print(f"Loading processor & model from {args.model_path}")
     
@@ -259,8 +294,8 @@ def main():
             model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                 "WestZhang/VibeVoice-Large-pt",
                 torch_dtype=torch.bfloat16,
-                device_map='cuda',
-                attn_implementation='flash_attention_2',
+                device_map=device,
+                attn_implementation=attn_implementation,
                 local_files_only=True,
             )
             print("✅ Successfully loaded legacy WestZhang model from local cache")
@@ -278,22 +313,22 @@ def main():
     if not goto_generation:
         processor = VibeVoiceProcessor.from_pretrained(model_path_to_use)
 
-        # Load model
+        # Load model with fallback mechanism
         try:
             model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                 model_path_to_use,
                 torch_dtype=torch.bfloat16,
-                device_map='cuda',
-                attn_implementation='flash_attention_2' # flash_attention_2 is recommended
+                device_map=device,
+                attn_implementation=attn_implementation
             )
         except Exception as e:
             print(f"[ERROR] : {type(e).__name__}: {e}")
             print(traceback.format_exc())
-            print("Error loading the model. Trying to use SDPA. However, note that only flash_attention_2 has been fully tested, and using SDPA may result in lower audio quality.")
+            print("Error loading the model. Trying to use SDPA fallback...")
             model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                 model_path_to_use,
                 torch_dtype=torch.bfloat16,
-                device_map='cuda',
+                device_map=device,
                 attn_implementation='sdpa'
             )
 

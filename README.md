@@ -285,6 +285,11 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 # Install OpenAI (required for AI script generation)
 pip install openai
 
+# Install FlashAttention2 (optional, for better performance on CUDA)
+# For Windows users, use pre-built wheels:
+# pip install flash-attn --no-build-isolation
+# Or download from: https://github.com/sunsetcoder/flash-attention-windows
+
 # Install the VibeVoice package
 pip install -e .
 ```
@@ -303,11 +308,29 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 # Install OpenAI (required for AI script generation)
 pip install openai
 
+# Install FlashAttention2 (optional, for better performance on CUDA)
+# For Windows users, use pre-built wheels:
+# pip install flash-attn --no-build-isolation
+# Or download from: https://github.com/sunsetcoder/flash-attention-windows
+
 # Install dependencies
 pip install -e .
 ```
 
 **Note**: Direct installation requires CUDA-compatible GPU drivers and PyTorch with CUDA support.
+
+### 🔧 Device Compatibility & Fallback Support
+
+VibeVoice now supports multiple device types with automatic fallback mechanisms:
+
+- **CUDA (NVIDIA GPUs)**: Full support with FlashAttention2 for optimal performance
+- **Apple Silicon (MPS)**: Native support for M1/M2/M3 Macs using Metal Performance Shaders
+- **CPU**: Fallback support for systems without GPU acceleration
+- **Windows**: Pre-built FlashAttention2 wheels available for easier installation
+
+The application automatically detects your hardware and uses the best available attention implementation:
+- `flash_attention_2` for CUDA (if available)
+- `sdpa` (Scaled Dot Product Attention) for MPS and CPU fallback
 
 ## Usages
 
@@ -373,3 +396,26 @@ Non-Speech Audio: The model focuses solely on speech synthesis and does not hand
 Overlapping Speech: The current model does not explicitly model or generate overlapping speech segments in conversations.
 
 We do not recommend using VibeVoice in commercial or real-world applications without further testing and development. This model is intended for research and development purposes only. Please use responsibly.
+
+## Acknowledgments
+
+We would like to thank the following contributors for their valuable work that enhanced VibeVoice's compatibility and performance:
+
+### Device Compatibility & Fallback Features
+- **Device Detection & Fallback Logic**: Inspired by implementations from the community, particularly [mypapit/VibeVoice](https://github.com/mypapit/VibeVoice) for demonstrating robust device detection and attention mechanism fallbacks.
+
+### FlashAttention2 Windows Support
+- [sunsetcoder/flash-attention-windows](https://github.com/sunsetcoder/flash-attention-windows): Pre-built FlashAttention2 wheels for Windows (Python 3.10, CUDA 11.7+)
+- [huihui-support/flash-attention-windows](https://github.com/huihui-support/flash-attention-windows): FlashAttention2 wheels for Python 3.10, 3.11, and 3.12
+- [ussoewwin/Flash-Attention-2_for_Windows](https://huggingface.co/ussoewwin/Flash-Attention-2_for_Windows): FlashAttention2 wheels for Python 3.11 and 3.12
+- [felisevan/flash-attention-build](https://github.com/felisevan/flash-attention-build): Additional Windows build support
+- [sdbds/flash-attention-for-windows](https://github.com/sdbds/flash-attention-for-windows): Windows compatibility solutions
+- [BlackTea-c/flash-attention-windows](https://github.com/BlackTea-c/flash-attention-windows): Community Windows support
+- [Creepybits: Flash Attention for ComfyUI on Windows](https://www.zanno.se/flash-attention-for-comfyui/): Windows installation guidance
+
+### Core Technologies
+- [PyTorch](https://pytorch.org/): For the implementation of Scaled Dot Product Attention (SDPA) and device management
+- [Hugging Face Transformers](https://huggingface.co/transformers/): For the model architecture and attention implementations
+- [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention): For the FlashAttention2 implementation
+
+These contributions have made VibeVoice more accessible across different hardware configurations and operating systems, ensuring a smoother experience for all users.

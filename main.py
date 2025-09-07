@@ -25,6 +25,33 @@ except ImportError:
     OPENAI_AVAILABLE = False
     print("Warning: OpenAI package not available. AI script generation will use fallback.")
 
+# Device detection and attention mechanism fallback
+def detect_device():
+    """Detect the best available device (CUDA, MPS, or CPU)"""
+    if torch.cuda.is_available():
+        return "cuda", torch.cuda.get_device_name(0)
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return "mps", "Apple Silicon (MPS)"
+    else:
+        return "cpu", "CPU"
+
+def get_attention_implementation(device_type: str):
+    """Get the best available attention implementation for the device"""
+    if device_type == "cuda":
+        try:
+            # Try to import flash_attn to check if it's available
+            import flash_attn
+            return "flash_attention_2"
+        except ImportError:
+            print("⚠️ FlashAttention2 not available, falling back to SDPA")
+            return "sdpa"
+    elif device_type == "mps":
+        # Apple Silicon doesn't support flash_attention_2, use SDPA
+        return "sdpa"
+    else:
+        # CPU fallback to SDPA
+        return "sdpa"
+
 from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from vibevoice.modular.streamer import AudioStreamer
@@ -36,12 +63,24 @@ logger = logging.get_logger(__name__)
 
 
 class VibeVoiceDemo:
-    def __init__(self, model_path: str, device: str = "cuda", inference_steps: int = 5, debug: bool = False, load_on_demand: bool = False,
+    def __init__(self, model_path: str, device: str = None, inference_steps: int = 5, debug: bool = False, load_on_demand: bool = False,
                  script_ai_url: str | None = None, script_ai_model: str | None = None, script_ai_api_key: str | None = None,
                  hf_offline: bool | None = None, hf_cache_dir: str | None = None):
         """Initialize the VibeVoice demo with model loading."""
         self.model_path = model_path
-        self.device = device
+        
+        # Auto-detect device if not specified
+        if device is None:
+            self.device, device_name = detect_device()
+            print(f"🔍 Auto-detected device: {device_name}")
+        else:
+            self.device = device
+            if device == "cuda" and not torch.cuda.is_available():
+                print("⚠️ CUDA requested but not available, falling back to CPU")
+                self.device = "cpu"
+            elif device == "mps" and not (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
+                print("⚠️ MPS requested but not available, falling back to CPU")
+                self.device = "cpu"
         self.inference_steps = inference_steps
         self.debug = debug
         self.load_on_demand = load_on_demand
@@ -132,6 +171,10 @@ class VibeVoiceDemo:
         offline_mode = self.hf_offline if self.hf_offline is not None else (hf_offline_env == '1' or (hf_offline_env or '').lower() in ['true', 'yes'])
         cache_dir = self.hf_cache_dir or os.getenv('HF_HOME') or os.getenv('TRANSFORMERS_CACHE') or None
 
+        # Get the best attention implementation for the device
+        attn_implementation = get_attention_implementation(self.device)
+        print(f"🎯 Using attention implementation: {attn_implementation}")
+        
         # Handle 7B model fallback for legacy support
         model_path_to_use = self.model_path
         if self.model_path == "WestZhang/VibeVoice-Large-pt":
@@ -147,8 +190,8 @@ class VibeVoiceDemo:
                 self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                     "WestZhang/VibeVoice-Large-pt",
                     torch_dtype=torch.bfloat16,
-                    device_map='cuda',
-                    attn_implementation="flash_attention_2",
+                    device_map=self.device,
+                    attn_implementation=attn_implementation,
                     local_files_only=True,
                     cache_dir=cache_dir,
                 )
@@ -173,8 +216,8 @@ class VibeVoiceDemo:
             self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                 model_path_to_use,
                 torch_dtype=torch.bfloat16,
-                device_map='cuda',
-                attn_implementation="flash_attention_2",
+                device_map=self.device,
+                attn_implementation=attn_implementation,
                 local_files_only=bool(offline_mode),
                 cache_dir=cache_dir,
             )
