@@ -72,7 +72,7 @@ logger = logging.get_logger(__name__)
 class VibeVoiceDemo:
     def __init__(self, model_path: str, device: str = None, inference_steps: int = 5, debug: bool = False, load_on_demand: bool = False,
                  script_ai_url: str | None = None, script_ai_model: str | None = None, script_ai_api_key: str | None = None,
-                 hf_offline: bool | None = None, hf_cache_dir: str | None = None):
+                 hf_offline: bool | None = None, hf_cache_dir: str | None = None, quant: str | None = None):
         """Initialize the VibeVoice demo with model loading."""
         self.model_path = model_path
         
@@ -110,6 +110,9 @@ class VibeVoiceDemo:
             "WestZhang/VibeVoice-Large-pt": "vibevoice/VibeVoice-7B",  # Legacy support with fallback
             "microsoft/VibeVoice-1.5B": "microsoft/VibeVoice-1.5B"
         }
+
+        # Quantization mode: 'none' or '4bit'
+        self.quantization_mode = (quant or os.getenv('VIBEVOICE_QUANT', 'none')).lower()
 
         # Initialize last prompt storage for regeneration
         self.last_prompt_data = None
@@ -298,13 +301,31 @@ class VibeVoiceDemo:
 
             # Load model with fallback mechanism
             try:
+                load_kwargs = {
+                    'torch_dtype': torch.bfloat16,
+                    'device_map': self.device,
+                    'attn_implementation': attn_implementation,
+                    'local_files_only': bool(offline_mode),
+                    'cache_dir': cache_dir,
+                }
+                if self.quantization_mode == '4bit':
+                    if self.device != 'cuda' or not torch.cuda.is_available():
+                        raise gr.Error("4-bit quantization requires CUDA. Use --device cuda or remove --quant 4bit.")
+                    try:
+                        import bitsandbytes as bnb  # noqa: F401
+                    except Exception:
+                        raise gr.Error("bitsandbytes is required for --quant 4bit. Install with: pip install bitsandbytes")
+                    load_kwargs.update({
+                        'load_in_4bit': True,
+                        'bnb_4bit_compute_dtype': torch.float16,
+                        'bnb_4bit_use_double_quant': True,
+                        'bnb_4bit_quant_type': 'nf4',
+                    })
+                    print("🔧 Loading model in 4-bit quantized mode (NF4)")
+
                 self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                     model_path_to_use,
-                    torch_dtype=torch.bfloat16,
-                    device_map=self.device,
-                    attn_implementation=attn_implementation,
-                    local_files_only=bool(offline_mode),
-                    cache_dir=cache_dir,
+                    **load_kwargs,
                 )
                 self.model.eval()
             except Exception as model_error:
@@ -315,13 +336,10 @@ class VibeVoiceDemo:
                 if attn_implementation != "sdpa":
                     print(f"⚠️ {attn_implementation} failed, falling back to SDPA: {model_error}")
                     try:
+                        load_kwargs['attn_implementation'] = 'sdpa'
                         self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                             model_path_to_use,
-                            torch_dtype=torch.bfloat16,
-                            device_map=self.device,
-                            attn_implementation="sdpa",
-                            local_files_only=bool(offline_mode),
-                            cache_dir=cache_dir,
+                            **load_kwargs,
                         )
                         self.model.eval()
                         print("✅ Successfully loaded model with SDPA fallback")
@@ -2338,6 +2356,13 @@ def parse_args():
         default=None,
         help="Custom cache directory for Hugging Face models/processors",
     )
+    parser.add_argument(
+        "--quant",
+        type=str,
+        default=os.getenv('VIBEVOICE_QUANT', 'none'),
+        choices=["none", "4bit"],
+        help="Quantization mode: 'none' or '4bit' (requires bitsandbytes on CUDA)",
+    )
     
     return parser.parse_args()
 
@@ -2391,6 +2416,7 @@ def main():
         script_ai_api_key=args.script_ai_api_key,
         hf_offline=bool(args.hf_offline),
         hf_cache_dir=args.hf_cache_dir,
+        quant=args.quant,
     )
     
     # Create interface
