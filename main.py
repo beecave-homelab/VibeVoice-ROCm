@@ -140,56 +140,34 @@ class VibeVoiceDemo:
             # Get memory info before cleanup
             if torch.cuda.is_available():
                 initial_memory = torch.cuda.memory_allocated() / 1024**3  # GB
-                initial_reserved = torch.cuda.memory_reserved() / 1024**3  # GB
-                print(f"📊 VRAM before cleanup: {initial_memory:.2f} GB allocated, {initial_reserved:.2f} GB reserved")
+                print(f"📊 VRAM before cleanup: {initial_memory:.2f} GB")
             
-            # Move model to CPU first to free GPU memory
+            # Clear model and processor from memory
             if hasattr(self, 'model') and self.model is not None:
-                try:
-                    # Move model to CPU before deletion
-                    self.model.cpu()
-                    # Clear any cached tensors
-                    if hasattr(self.model, 'model'):
-                        self.model.model.cpu()
-                    if hasattr(self.model, 'language_model'):
-                        self.model.language_model.cpu()
-                except Exception as e:
-                    print(f"⚠️ Warning: Could not move model to CPU: {e}")
-                
                 del self.model
                 self.model = None
-            
             if hasattr(self, 'processor') and self.processor is not None:
                 del self.processor
                 self.processor = None
             
             self.model_loaded = False
             
-            # Force garbage collection multiple times
+            # Force garbage collection
             import gc
-            for i in range(3):
-                gc.collect()
+            gc.collect()
             
-            # Clear CUDA cache multiple times
+            # Clear CUDA cache
             if torch.cuda.is_available():
-                for i in range(3):
-                    torch.cuda.empty_cache()
-                
-                # Force synchronization to ensure cleanup is complete
-                torch.cuda.synchronize()
-                
+                torch.cuda.empty_cache()
+                # Optionally perform deeper cleanup when enabled
+                try:
+                    if os.getenv('VIBEVOICE_CUDA_IPC_COLLECT', '0') in ['1', 'true', 'True']:
+                        torch.cuda.ipc_collect()
+                except Exception:
+                    pass
                 final_memory = torch.cuda.memory_allocated() / 1024**3  # GB
-                final_reserved = torch.cuda.memory_reserved() / 1024**3  # GB
                 freed_memory = initial_memory - final_memory
-                freed_reserved = initial_reserved - final_reserved
-                
-                print(f"📊 VRAM after cleanup: {final_memory:.2f} GB allocated, {final_reserved:.2f} GB reserved")
-                print(f"📊 Memory freed: {freed_memory:.2f} GB allocated, {freed_reserved:.2f} GB reserved")
-                
-                # Check if memory was actually freed to system
-                if final_reserved > initial_memory * 0.1:  # If reserved is still > 10% of original allocated
-                    print("⚠️ Warning: Significant memory still reserved. This may be due to PyTorch's memory pool.")
-                    print("💡 Tip: Restart the Python process to fully free GPU memory to the system.")
+                print(f"📊 VRAM after cleanup: {final_memory:.2f} GB (freed {freed_memory:.2f} GB)")
             else:
                 print("✅ Model unloaded from CPU memory")
         else:
@@ -198,64 +176,17 @@ class VibeVoiceDemo:
     def _cleanup_model_objects(self):
         """Clean up partially loaded model objects to prevent memory leaks."""
         if hasattr(self, 'model') and self.model is not None:
-            try:
-                # Move model to CPU before deletion
-                self.model.cpu()
-                if hasattr(self.model, 'model'):
-                    self.model.model.cpu()
-                if hasattr(self.model, 'language_model'):
-                    self.model.language_model.cpu()
-            except Exception:
-                pass  # Ignore errors during cleanup
             del self.model
             self.model = None
         if hasattr(self, 'processor') and self.processor is not None:
             del self.processor
             self.processor = None
         self.model_loaded = False
-        # Force garbage collection multiple times
+        # Force garbage collection
         import gc
-        for i in range(3):
-            gc.collect()
+        gc.collect()
         if torch.cuda.is_available():
-            for i in range(3):
-                torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-
-    def force_memory_cleanup(self):
-        """Force complete memory cleanup - use when memory is still showing as used in nvidia-smi."""
-        print("🧹 Forcing complete memory cleanup...")
-        
-        if torch.cuda.is_available():
-            initial_allocated = torch.cuda.memory_allocated() / 1024**3
-            initial_reserved = torch.cuda.memory_reserved() / 1024**3
-            
-            # Clear all CUDA cache
             torch.cuda.empty_cache()
-            
-            # Force garbage collection
-            import gc
-            gc.collect()
-            
-            # Clear cache again
-            torch.cuda.empty_cache()
-            
-            # Synchronize
-            torch.cuda.synchronize()
-            
-            final_allocated = torch.cuda.memory_allocated() / 1024**3
-            final_reserved = torch.cuda.memory_reserved() / 1024**3
-            
-            print(f"📊 Memory cleanup results:")
-            print(f"   Allocated: {initial_allocated:.2f} GB → {final_allocated:.2f} GB")
-            print(f"   Reserved: {initial_reserved:.2f} GB → {final_reserved:.2f} GB")
-            
-            if final_reserved > 1.0:  # If still > 1GB reserved
-                print("⚠️ Significant memory still reserved by PyTorch.")
-                print("💡 This is normal - PyTorch keeps a memory pool for performance.")
-                print("💡 To free memory to the system, restart the Python process.")
-            else:
-                print("✅ Memory cleanup completed successfully!")
 
     def switch_model(self, new_model_path: str):
         """Switch to a different model, unloading the current one if loaded."""
@@ -783,6 +714,13 @@ class VibeVoiceDemo:
                 audio_streamer.end()
                 generation_thread.join(timeout=5.0)
 
+            # Ensure CUDA work is finished before potential unload
+            try:
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+            except Exception:
+                pass
+
             # Clean up
             self.current_streamer = None
             self.is_generating = False
@@ -887,29 +825,40 @@ class VibeVoiceDemo:
                 except Exception:
                     negative_ids = None
 
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=None,
-                cfg_scale=cfg_scale,
-                tokenizer=self.processor.tokenizer,
-                generation_config={
-                    'do_sample': bool(do_sample),
-                    'temperature': float(temperature),
-                    'top_p': float(top_p),
-                    'top_k': int(top_k),
-                },
-                negative_prompt_ids=negative_ids,
-                audio_streamer=audio_streamer,
-                stop_check_fn=check_stop_generation,  # Pass the stop check function
-                verbose=False,  # Disable verbose in streaming mode
-                refresh_negative=True,
-            )
+            with torch.inference_mode():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=None,
+                    cfg_scale=cfg_scale,
+                    tokenizer=self.processor.tokenizer,
+                    generation_config={
+                        'do_sample': bool(do_sample),
+                        'temperature': float(temperature),
+                        'top_p': float(top_p),
+                        'top_k': int(top_k),
+                    },
+                    negative_prompt_ids=negative_ids,
+                    audio_streamer=audio_streamer,
+                    stop_check_fn=check_stop_generation,  # Pass the stop check function
+                    verbose=False,  # Disable verbose in streaming mode
+                    refresh_negative=True,
+                )
             
         except Exception as e:
             print(f"Error in generation thread: {e}")
             traceback.print_exc()
             # Make sure to end the stream on error
             audio_streamer.end()
+        finally:
+            # Help garbage collector by removing references
+            try:
+                negative_ids = None
+                inputs = None
+                outputs = None
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
     
     def stop_audio_generation(self):
         """Stop the current audio generation process."""
@@ -2358,11 +2307,6 @@ def parse_args():
         help="Load On Demand: Skip model loading on startup, load models when needed",
     )
     parser.add_argument(
-        "--force-cleanup",
-        action="store_true",
-        help="Force complete memory cleanup on startup (useful for debugging memory issues)",
-    )
-    parser.add_argument(
         "--script-ai-url", "--script_ai_url",
         dest="script_ai_url",
         type=str,
@@ -2429,17 +2373,6 @@ def main():
     set_seed(42)  # Set a fixed seed for reproducibility
 
     print("🎙️ Initializing VibeVoice Demo with Streaming Support...")
-
-    # Force memory cleanup if requested
-    if args.force_cleanup:
-        print("🧹 Force cleanup requested - clearing all GPU memory...")
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            import gc
-            gc.collect()
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            print("✅ Memory cleanup completed")
 
     # Set default model to large model if not specified
     if args.model_path == "/tmp/vibevoice-model":
