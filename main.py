@@ -135,20 +135,52 @@ class VibeVoiceDemo:
     def unload_model(self):
         """Unload the model to free VRAM."""
         if self.model_loaded and self.model is not None:
-            print(f"Unloading model from {self.model_path} to free VRAM")
+            print(f"🔄 Unloading model from {self.model_path} to free VRAM")
+            
+            # Get memory info before cleanup
+            if torch.cuda.is_available():
+                initial_memory = torch.cuda.memory_allocated() / 1024**3  # GB
+                print(f"📊 VRAM before cleanup: {initial_memory:.2f} GB")
+            
             # Clear model and processor from memory
-            if hasattr(self, 'model'):
+            if hasattr(self, 'model') and self.model is not None:
                 del self.model
-            if hasattr(self, 'processor'):
+                self.model = None
+            if hasattr(self, 'processor') and self.processor is not None:
                 del self.processor
-            self.model = None
-            self.processor = None
+                self.processor = None
+            
             self.model_loaded = False
+            
             # Force garbage collection
             import gc
             gc.collect()
+            
+            # Clear CUDA cache
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                final_memory = torch.cuda.memory_allocated() / 1024**3  # GB
+                freed_memory = initial_memory - final_memory
+                print(f"📊 VRAM after cleanup: {final_memory:.2f} GB (freed {freed_memory:.2f} GB)")
+            else:
+                print("✅ Model unloaded from CPU memory")
+        else:
+            print("ℹ️ No model loaded to unload")
+
+    def _cleanup_model_objects(self):
+        """Clean up partially loaded model objects to prevent memory leaks."""
+        if hasattr(self, 'model') and self.model is not None:
+            del self.model
+            self.model = None
+        if hasattr(self, 'processor') and self.processor is not None:
+            del self.processor
+            self.processor = None
+        self.model_loaded = False
+        # Force garbage collection
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def switch_model(self, new_model_path: str):
         """Switch to a different model, unloading the current one if loaded."""
@@ -209,10 +241,18 @@ class VibeVoiceDemo:
                 self.model_loaded = True
                 legacy_loaded = True
             except Exception as legacy_error:
+                # Clean up any partially loaded objects
+                self._cleanup_model_objects()
+                
                 # If the primary attention implementation fails, try SDPA fallback
                 if attn_implementation != "sdpa":
                     print(f"⚠️ {attn_implementation} failed for legacy model, falling back to SDPA: {legacy_error}")
                     try:
+                        self.processor = VibeVoiceProcessor.from_pretrained(
+                            "WestZhang/VibeVoice-Large-pt",
+                            local_files_only=True,
+                            cache_dir=cache_dir,
+                        )
                         self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                             "WestZhang/VibeVoice-Large-pt",
                             torch_dtype=torch.bfloat16,
@@ -227,8 +267,12 @@ class VibeVoiceDemo:
                         legacy_loaded = True
                     except Exception as legacy_fallback_error:
                         print(f"❌ Both {attn_implementation} and SDPA failed for legacy model: {legacy_fallback_error}")
+                        # Clean up any partially loaded objects
+                        self._cleanup_model_objects()
                 else:
                     print(f"❌ SDPA failed for legacy model: {legacy_error}")
+                    # Clean up any partially loaded objects
+                    self._cleanup_model_objects()
             
             # If legacy loading failed, fall back to new repository
             if not legacy_loaded:
@@ -258,6 +302,9 @@ class VibeVoiceDemo:
                 )
                 self.model.eval()
             except Exception as model_error:
+                # Clean up any partially loaded objects
+                self._cleanup_model_objects()
+                
                 # If the primary attention implementation fails, try SDPA fallback
                 if attn_implementation != "sdpa":
                     print(f"⚠️ {attn_implementation} failed, falling back to SDPA: {model_error}")
@@ -274,6 +321,8 @@ class VibeVoiceDemo:
                         print("✅ Successfully loaded model with SDPA fallback")
                     except Exception as fallback_error:
                         print(f"❌ Both {attn_implementation} and SDPA failed: {fallback_error}")
+                        # Clean up any partially loaded objects
+                        self._cleanup_model_objects()
                         if offline_mode:
                             raise gr.Error(f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}")
                         else:
