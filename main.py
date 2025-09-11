@@ -64,6 +64,18 @@ from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from vibevoice.modular.streamer import AudioStreamer
 from transformers.utils import logging
 from transformers import set_seed
+try:
+    # Optional: used only for 4-bit quantized model loading
+    from transformers import BitsAndBytesConfig
+    _HAS_BNB = True
+except Exception:
+    _HAS_BNB = False
+from vibevoice.modular.configuration_vibevoice import VibeVoiceConfig
+try:
+    from huggingface_hub import snapshot_download
+    _HAS_HF_HUB = True
+except Exception:
+    _HAS_HF_HUB = False
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
@@ -72,7 +84,7 @@ logger = logging.get_logger(__name__)
 class VibeVoiceDemo:
     def __init__(self, model_path: str, device: str = None, inference_steps: int = 5, debug: bool = False, load_on_demand: bool = False,
                  script_ai_url: str | None = None, script_ai_model: str | None = None, script_ai_api_key: str | None = None,
-                 hf_offline: bool | None = None, hf_cache_dir: str | None = None, quant: str | None = None):
+                 hf_offline: bool | None = None, hf_cache_dir: str | None = None):
         """Initialize the VibeVoice demo with model loading."""
         self.model_path = model_path
         
@@ -108,11 +120,10 @@ class VibeVoiceDemo:
         # Available models
         self.available_models = {
             "WestZhang/VibeVoice-Large-pt": "vibevoice/VibeVoice-7B",  # Legacy support with fallback
-            "microsoft/VibeVoice-1.5B": "microsoft/VibeVoice-1.5B"
+            "microsoft/VibeVoice-1.5B": "microsoft/VibeVoice-1.5B",
+            # 4-bit quantized weights hosted by DevParker; reuse 7B config/processor
+            "DevParker/VibeVoice7b-low-vram (4-bit)": "DevParker/VibeVoice7b-low-vram/4bit",
         }
-
-        # Quantization mode: 'none' or '4bit'
-        self.quantization_mode = (quant or os.getenv('VIBEVOICE_QUANT', 'none')).lower()
 
         # Initialize last prompt storage for regeneration
         self.last_prompt_data = None
@@ -138,58 +149,20 @@ class VibeVoiceDemo:
     def unload_model(self):
         """Unload the model to free VRAM."""
         if self.model_loaded and self.model is not None:
-            print(f"🔄 Unloading model from {self.model_path} to free VRAM")
-            
-            # Get memory info before cleanup
-            if torch.cuda.is_available():
-                initial_memory = torch.cuda.memory_allocated() / 1024**3  # GB
-                print(f"📊 VRAM before cleanup: {initial_memory:.2f} GB")
-            
+            print(f"Unloading model from {self.model_path} to free VRAM")
             # Clear model and processor from memory
-            if hasattr(self, 'model') and self.model is not None:
+            if hasattr(self, 'model'):
                 del self.model
-                self.model = None
-            if hasattr(self, 'processor') and self.processor is not None:
+            if hasattr(self, 'processor'):
                 del self.processor
-                self.processor = None
-            
+            self.model = None
+            self.processor = None
             self.model_loaded = False
-            
             # Force garbage collection
             import gc
             gc.collect()
-            
-            # Clear CUDA cache
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                # Optionally perform deeper cleanup when enabled
-                try:
-                    if os.getenv('VIBEVOICE_CUDA_IPC_COLLECT', '0') in ['1', 'true', 'True']:
-                        torch.cuda.ipc_collect()
-                except Exception:
-                    pass
-                final_memory = torch.cuda.memory_allocated() / 1024**3  # GB
-                freed_memory = initial_memory - final_memory
-                print(f"📊 VRAM after cleanup: {final_memory:.2f} GB (freed {freed_memory:.2f} GB)")
-            else:
-                print("✅ Model unloaded from CPU memory")
-        else:
-            print("ℹ️ No model loaded to unload")
-
-    def _cleanup_model_objects(self):
-        """Clean up partially loaded model objects to prevent memory leaks."""
-        if hasattr(self, 'model') and self.model is not None:
-            del self.model
-            self.model = None
-        if hasattr(self, 'processor') and self.processor is not None:
-            del self.processor
-            self.processor = None
-        self.model_loaded = False
-        # Force garbage collection
-        import gc
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
     def switch_model(self, new_model_path: str):
         """Switch to a different model, unloading the current one if loaded."""
@@ -223,8 +196,102 @@ class VibeVoiceDemo:
         attn_implementation = get_attention_implementation(self.device)
         print(f"🎯 Using attention implementation: {attn_implementation}")
         
+        # Resolve mapped path if using display label
+        mapped_path = self.available_models.get(self.model_path, self.model_path)
         # Handle 7B model fallback for legacy support
-        model_path_to_use = self.model_path
+        model_path_to_use = mapped_path
+
+        # Special handling for 4-bit quantized model selection
+        if self.model_path == "DevParker/VibeVoice7b-low-vram (4-bit)":
+            if not _HAS_BNB:
+                raise gr.Error("bitsandbytes is required for 4-bit loading. Please install it: pip install bitsandbytes")
+            if not _HAS_HF_HUB:
+                raise gr.Error("huggingface_hub is required to fetch processor/config. Please install it: pip install huggingface_hub")
+
+            weights_repo = "DevParker/VibeVoice7b-low-vram"
+            subfolder = "4bit"
+
+            # Load processor and config from WestZhang 7B (preferred), fallback to vibevoice 7B
+            try:
+                westzhang_local_dir = snapshot_download(repo_id="WestZhang/VibeVoice-Large-pt", local_files_only=False, cache_dir=cache_dir)
+                self.processor = VibeVoiceProcessor.from_pretrained(
+                    westzhang_local_dir,
+                    language_model_pretrained_name="Qwen/Qwen2.5-7B",
+                )
+                base_config = VibeVoiceConfig.from_pretrained(
+                    "vibevoice/VibeVoice-7B",
+                    local_files_only=False,
+                    cache_dir=cache_dir,
+                )
+            except Exception:
+                print("⚠️ Could not load processor/config from WestZhang/VibeVoice-Large-pt. Falling back to vibevoice/VibeVoice-7B")
+                vibe_local_dir = snapshot_download(repo_id="vibevoice/VibeVoice-7B", local_files_only=False, cache_dir=cache_dir)
+                self.processor = VibeVoiceProcessor.from_pretrained(
+                    vibe_local_dir,
+                    language_model_pretrained_name="Qwen/Qwen2.5-7B",
+                )
+                base_config = VibeVoiceConfig.from_pretrained(
+                    "vibevoice/VibeVoice-7B",
+                    local_files_only=False,
+                    cache_dir=cache_dir,
+                )
+
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+
+            try:
+                self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                    weights_repo,
+                    subfolder=subfolder,
+                    config=base_config,
+                    quantization_config=bnb_config,
+                    device_map=self.device,
+                    attn_implementation="sdpa",
+                    torch_dtype=torch.float16,
+                    local_files_only=bool(offline_mode),
+                    cache_dir=cache_dir,
+                )
+                self.model.eval()
+            except Exception as model_error:
+                print(f"⚠️ Loading pre-quantized 4-bit weights failed: {model_error}")
+                print("🔄 Falling back to on-the-fly 4-bit quantization from vibevoice/VibeVoice-7B")
+                try:
+                    self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                        "vibevoice/VibeVoice-7B",
+                        config=base_config,
+                        quantization_config=bnb_config,
+                        device_map=self.device,
+                        attn_implementation="sdpa",
+                        torch_dtype=torch.float16,
+                        local_files_only=False,
+                        cache_dir=cache_dir,
+                    )
+                    self.model.eval()
+                except Exception as fallback_error:
+                    print(f"❌ On-the-fly 4-bit quantization load also failed: {fallback_error}")
+                    if offline_mode:
+                        raise gr.Error(f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}")
+                    else:
+                        raise fallback_error
+
+            # Use SDE solver by default
+            self.model.model.noise_scheduler = self.model.model.noise_scheduler.from_config(
+                self.model.model.noise_scheduler.config,
+                algorithm_type='sde-dpmsolver++',
+                beta_schedule='squaredcos_cap_v2'
+            )
+            self.model.set_ddpm_inference_steps(num_steps=self.inference_steps)
+
+            if hasattr(self.model.model, 'language_model'):
+                print(f"Language model attention: {self.model.model.language_model.config._attn_implementation}")
+
+            self.model_loaded = True
+            print("✅ 4-bit quantized model loaded successfully")
+            return
         if self.model_path == "WestZhang/VibeVoice-Large-pt":
             print("🔄 Detected legacy 7B model path. Attempting fallback mechanism...")
             print("📁 Attempting to load from local cache (legacy WestZhang model)...")
@@ -250,18 +317,10 @@ class VibeVoiceDemo:
                 self.model_loaded = True
                 legacy_loaded = True
             except Exception as legacy_error:
-                # Clean up any partially loaded objects
-                self._cleanup_model_objects()
-                
                 # If the primary attention implementation fails, try SDPA fallback
                 if attn_implementation != "sdpa":
                     print(f"⚠️ {attn_implementation} failed for legacy model, falling back to SDPA: {legacy_error}")
                     try:
-                        self.processor = VibeVoiceProcessor.from_pretrained(
-                            "WestZhang/VibeVoice-Large-pt",
-                            local_files_only=True,
-                            cache_dir=cache_dir,
-                        )
                         self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                             "WestZhang/VibeVoice-Large-pt",
                             torch_dtype=torch.bfloat16,
@@ -276,12 +335,8 @@ class VibeVoiceDemo:
                         legacy_loaded = True
                     except Exception as legacy_fallback_error:
                         print(f"❌ Both {attn_implementation} and SDPA failed for legacy model: {legacy_fallback_error}")
-                        # Clean up any partially loaded objects
-                        self._cleanup_model_objects()
                 else:
                     print(f"❌ SDPA failed for legacy model: {legacy_error}")
-                    # Clean up any partially loaded objects
-                    self._cleanup_model_objects()
             
             # If legacy loading failed, fall back to new repository
             if not legacy_loaded:
@@ -301,52 +356,32 @@ class VibeVoiceDemo:
 
             # Load model with fallback mechanism
             try:
-                load_kwargs = {
-                    'torch_dtype': torch.bfloat16,
-                    'device_map': self.device,
-                    'attn_implementation': attn_implementation,
-                    'local_files_only': bool(offline_mode),
-                    'cache_dir': cache_dir,
-                }
-                if self.quantization_mode == '4bit':
-                    if self.device != 'cuda' or not torch.cuda.is_available():
-                        raise gr.Error("4-bit quantization requires CUDA. Use --device cuda or remove --quant 4bit.")
-                    try:
-                        import bitsandbytes as bnb  # noqa: F401
-                    except Exception:
-                        raise gr.Error("bitsandbytes is required for --quant 4bit. Install with: pip install bitsandbytes")
-                    load_kwargs.update({
-                        'load_in_4bit': True,
-                        'bnb_4bit_compute_dtype': torch.float16,
-                        'bnb_4bit_use_double_quant': True,
-                        'bnb_4bit_quant_type': 'nf4',
-                    })
-                    print("🔧 Loading model in 4-bit quantized mode (NF4)")
-
                 self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                     model_path_to_use,
-                    **load_kwargs,
+                    torch_dtype=torch.bfloat16,
+                    device_map=self.device,
+                    attn_implementation=attn_implementation,
+                    local_files_only=bool(offline_mode),
+                    cache_dir=cache_dir,
                 )
                 self.model.eval()
             except Exception as model_error:
-                # Clean up any partially loaded objects
-                self._cleanup_model_objects()
-                
                 # If the primary attention implementation fails, try SDPA fallback
                 if attn_implementation != "sdpa":
                     print(f"⚠️ {attn_implementation} failed, falling back to SDPA: {model_error}")
                     try:
-                        load_kwargs['attn_implementation'] = 'sdpa'
                         self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                             model_path_to_use,
-                            **load_kwargs,
+                            torch_dtype=torch.bfloat16,
+                            device_map=self.device,
+                            attn_implementation="sdpa",
+                            local_files_only=bool(offline_mode),
+                            cache_dir=cache_dir,
                         )
                         self.model.eval()
                         print("✅ Successfully loaded model with SDPA fallback")
                     except Exception as fallback_error:
                         print(f"❌ Both {attn_implementation} and SDPA failed: {fallback_error}")
-                        # Clean up any partially loaded objects
-                        self._cleanup_model_objects()
                         if offline_mode:
                             raise gr.Error(f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}")
                         else:
@@ -732,13 +767,6 @@ class VibeVoiceDemo:
                 audio_streamer.end()
                 generation_thread.join(timeout=5.0)
 
-            # Ensure CUDA work is finished before potential unload
-            try:
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-            except Exception:
-                pass
-
             # Clean up
             self.current_streamer = None
             self.is_generating = False
@@ -843,40 +871,29 @@ class VibeVoiceDemo:
                 except Exception:
                     negative_ids = None
 
-            with torch.inference_mode():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=None,
-                    cfg_scale=cfg_scale,
-                    tokenizer=self.processor.tokenizer,
-                    generation_config={
-                        'do_sample': bool(do_sample),
-                        'temperature': float(temperature),
-                        'top_p': float(top_p),
-                        'top_k': int(top_k),
-                    },
-                    negative_prompt_ids=negative_ids,
-                    audio_streamer=audio_streamer,
-                    stop_check_fn=check_stop_generation,  # Pass the stop check function
-                    verbose=False,  # Disable verbose in streaming mode
-                    refresh_negative=True,
-                )
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=None,
+                cfg_scale=cfg_scale,
+                tokenizer=self.processor.tokenizer,
+                generation_config={
+                    'do_sample': bool(do_sample),
+                    'temperature': float(temperature),
+                    'top_p': float(top_p),
+                    'top_k': int(top_k),
+                },
+                negative_prompt_ids=negative_ids,
+                audio_streamer=audio_streamer,
+                stop_check_fn=check_stop_generation,  # Pass the stop check function
+                verbose=False,  # Disable verbose in streaming mode
+                refresh_negative=True,
+            )
             
         except Exception as e:
             print(f"Error in generation thread: {e}")
             traceback.print_exc()
             # Make sure to end the stream on error
             audio_streamer.end()
-        finally:
-            # Help garbage collector by removing references
-            try:
-                negative_ids = None
-                inputs = None
-                outputs = None
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
     
     def stop_audio_generation(self):
         """Stop the current audio generation process."""
@@ -2356,13 +2373,6 @@ def parse_args():
         default=None,
         help="Custom cache directory for Hugging Face models/processors",
     )
-    parser.add_argument(
-        "--quant",
-        type=str,
-        default=os.getenv('VIBEVOICE_QUANT', 'none'),
-        choices=["none", "4bit"],
-        help="Quantization mode: 'none' or '4bit' (requires bitsandbytes on CUDA)",
-    )
     
     return parser.parse_args()
 
@@ -2416,7 +2426,6 @@ def main():
         script_ai_api_key=args.script_ai_api_key,
         hf_offline=bool(args.hf_offline),
         hf_cache_dir=args.hf_cache_dir,
-        quant=args.quant,
     )
     
     # Create interface
