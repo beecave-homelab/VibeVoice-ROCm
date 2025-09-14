@@ -5,40 +5,67 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vibevoice"
 version = "0.0.1"
-authors = [
-  { name="vibevoice team", email="vibepod@microsoft.com" },
-]
 description = "A model for speech generation with an AR + diffusion architecture."
 readme = "README.md"
 requires-python = ">=3.8"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    # "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+authors = [
+  { name = "vibevoice team", email = "vibepod@microsoft.com" },
 ]
-dependencies = [
-    "torch",
-    "accelerate==1.6.0",
-    "transformers==4.51.3", # we develop this project on transformers==4.51.3, later version may not be compatible
-    "diffusers",
-    "tqdm",
-    "numpy",
-    "scipy",
-    "librosa",
-    "ml-collections",
-    "absl-py",
-    "gradio",
-    "av",
-    "aiortc",
-    "librosa",
-    "openai",
-    "python-dotenv"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  # "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
 ]
 
+# --- ROCm-based torch deps applied here ---
+dependencies = [
+  "torch==2.5.1",
+  "torchaudio==2.5.0",
+
+  "accelerate==1.6.0",
+  "transformers==4.51.3",  # we develop this project on transformers==4.51.3, later version may not be compatible
+  "diffusers",
+  "tqdm",
+  "numpy",
+  "scipy",
+  "librosa",
+  "ml-collections",
+  "absl-py",
+  "gradio",
+  "av",
+  "aiortc",
+  "librosa",
+  "openai",
+  "python-dotenv",
+]
 
 [project.urls]
-"Homepage" = "https://github.com/microsoft/VibeVoice"
+Homepage = "https://github.com/microsoft/VibeVoice"
 "Bug Tracker" = "https://github.com/microsoft/VibeVoice/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+# --- Optional: mirror your ROCm extras & sources for PDM users ---
+[project.optional-dependencies]
+rocm = [
+  "torch==2.5.1",
+  "torchaudio==2.5.0",
+  # add "onnxruntime-rocm" here if you later require it in this repo
+]
+
+# These PDM settings are ignored by setuptools/pip, but enable easy ROCm installs when using PDM.
+[[tool.pdm.source]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+verify_ssl = true
+type = "index"
+exclude_packages = ["torch", "torchaudio", "onnxruntime-rocm", "pytorch-triton-rocm"]
+include_packages = ["*"]
+
+[[tool.pdm.source]]
+name = "rocm-wheels"
+url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-6.4.1/"
+verify_ssl = true
+type = "find_links"
+include_packages = ["torch", "torchaudio", "onnxruntime-rocm", "pytorch-triton-rocm"]
