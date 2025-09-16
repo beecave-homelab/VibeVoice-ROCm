@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [project]
 name = "vibevoice"
@@ -34,7 +34,6 @@ dependencies = [
   "gradio",
   "av",
   "aiortc",
-  "librosa",
   "openai",
   "python-dotenv",
 ]
@@ -43,15 +42,22 @@ dependencies = [
 Homepage = "https://github.com/microsoft/VibeVoice"
 "Bug Tracker" = "https://github.com/microsoft/VibeVoice/issues"
 
-[tool.setuptools.packages.find]
-where = ["."]
-
 # --- Optional: mirror your ROCm extras & sources for PDM users ---
 [project.optional-dependencies]
 rocm = [
   "torch==2.5.1",
   "torchaudio==2.5.0",
   # add "onnxruntime-rocm" here if you later require it in this repo
+]
+
+[tool.pdm.build]
+includes = ["vibevoice/"]
+
+[tool.pdm.dev-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff",
 ]
 
 # These PDM settings are ignored by setuptools/pip, but enable easy ROCm installs when using PDM.
