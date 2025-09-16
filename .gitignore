@@ -129,3 +129,4 @@ dmypy.json
 # Gradio
 gradio_cached_examples/
 flagged/
+.pdm-python
