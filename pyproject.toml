@@ -7,7 +7,7 @@ name = "vibevoice"
 version = "0.0.1"
 description = "A model for speech generation with an AR + diffusion architecture."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
   { name = "vibevoice team", email = "vibepod@microsoft.com" },
 ]
