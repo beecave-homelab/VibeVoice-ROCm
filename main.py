@@ -3,6 +3,7 @@
 High-Quality Dialogue Generation Interface with Streaming Support.
 """
 
+#  noqa: E501
 from __future__ import annotations
 
 import argparse
@@ -14,6 +15,7 @@ import threading
 import time
 import traceback
 from collections.abc import Iterator
+from typing import Any
 
 import gradio as gr
 import librosa
@@ -45,7 +47,7 @@ except ImportError as e:
 
 
 # Device detection and attention mechanism fallback
-def detect_device():
+def detect_device() -> tuple[str, str]:
     """Detect the best available compute device.
 
     Returns:
@@ -60,7 +62,7 @@ def detect_device():
         return "cpu", "CPU"
 
 
-def get_attention_implementation(device_type: str):
+def get_attention_implementation(device_type: str) -> str:
     """Select the optimal attention implementation for a device.
 
     Args:
@@ -207,12 +209,7 @@ class VibeVoiceDemo:
         # Removed legacy stop words storage from deprecated script system
 
     def ensure_model_loaded(self) -> None:
-        """Ensure that the model weights and processor are initialized.
-
-        Raises:
-            gr.Error: If loading the model fails while in offline mode.
-
-        """
+        """Ensure that the model weights and processor are initialized."""
         if not self.model_loaded:
             self.load_model()
             # Voice presets are already set up in __init__, no need to call again
@@ -268,8 +265,8 @@ class VibeVoiceDemo:
         """Load the VibeVoice processor and model weights into memory.
 
         Raises:
-            gr.Error: If offline loading is requested but assets are missing.
-            Exception: If model initialization fails unexpectedly.
+            Error: If offline loading is requested but assets are missing or
+                required packages/files are unavailable.
 
         """
         print(f"Loading processor & model from {self.model_path}")
@@ -560,11 +557,11 @@ class VibeVoiceDemo:
         self.model_loaded = True
         print(f"✅ Model loaded successfully from {self.model_path}")
 
-    def setup_voice_presets(self):
+    def setup_voice_presets(self) -> None:
         """Discover available voice presets from bundled and custom assets.
 
         Raises:
-            gr.Error: If no compatible audio presets are found on disk.
+            Error: If no compatible audio presets are found on disk.
 
         """
         # Demo voices directory (relative to main.py)
@@ -609,7 +606,9 @@ class VibeVoiceDemo:
 
         print(f"Total available voices: {len(self.available_voices)}")
 
-    def _scan_voice_directory(self, directory: str, prefix: str, voice_dict: dict):
+    def _scan_voice_directory(
+        self, directory: str, prefix: str, voice_dict: dict[str, str]
+    ) -> None:
         """Populate ``voice_dict`` with voices discovered under ``directory``.
 
         Args:
@@ -625,16 +624,14 @@ class VibeVoiceDemo:
 
                 if os.path.isfile(item_path):
                     # Check if it's an audio file
-                    if item.lower().endswith(
-                        (
-                            ".wav",
-                            ".mp3",
-                            ".flac",
-                            ".ogg",
-                            ".m4a",
-                            ".aac",
-                        )
-                    ):
+                    if item.lower().endswith((
+                        ".wav",
+                        ".mp3",
+                        ".flac",
+                        ".ogg",
+                        ".m4a",
+                        ".aac",
+                    )):
                         # Remove extension to get the name
                         name = os.path.splitext(item)[0]
 
@@ -769,7 +766,7 @@ class VibeVoiceDemo:
             tuple: Streaming audio chunk, complete audio data, log message, and a streaming visibility update.
 
         Raises:
-            gr.Error: If inputs are invalid or voice resources cannot be loaded.
+            Error: If inputs are invalid or voice resources cannot be loaded.
 
         """
         try:
@@ -1139,15 +1136,15 @@ class VibeVoiceDemo:
 
     def _generate_with_streamer(
         self,
-        inputs,
-        cfg_scale,
-        audio_streamer,
-        do_sample=True,
-        temperature=0.95,
-        top_p=0.95,
-        top_k=0,
+        inputs: dict[str, Any],
+        cfg_scale: float,
+        audio_streamer: AudioStreamer,
+        do_sample: bool = True,
+        temperature: float = 0.95,
+        top_p: float = 0.95,
+        top_k: int = 0,
         negative_prompt: str = "",
-    ):
+    ) -> None:
         """Run model.generate with streaming support on a background thread.
 
         Args:
@@ -1168,7 +1165,7 @@ class VibeVoiceDemo:
                 return
 
             # Define a stop check function that can be called from generate
-            def check_stop_generation():
+            def check_stop_generation() -> bool:
                 """Return whether streaming should stop early.
 
                 Returns:
@@ -1211,13 +1208,8 @@ class VibeVoiceDemo:
             # Make sure to end the stream on error
             audio_streamer.end()
 
-    def stop_audio_generation(self):
-        """Request that the current audio generation loop stop.
-
-        Returns:
-            None: This method updates internal flags and does not return a meaningful value.
-
-        """
+    def stop_audio_generation(self) -> None:
+        """Request that the current audio generation loop stop."""
         self.stop_generation = True
         if self.current_streamer is not None:
             try:
@@ -1226,7 +1218,7 @@ class VibeVoiceDemo:
                 print(f"Error stopping streamer: {e}")
         print("🛑 Audio generation stop requested")
 
-    def store_last_prompt_data(self, prompt_data):
+    def store_last_prompt_data(self, prompt_data: dict[str, Any]) -> None:
         """Persist the inputs from the most recent generation request.
 
         Args:
@@ -1586,16 +1578,14 @@ class VibeVoiceDemo:
                             content_text = direct_content
                         elif isinstance(direct_content, list):
                             try:
-                                content_text = "".join(
-                                    [
-                                        (
-                                            part.get("text", "")
-                                            if isinstance(part, dict)
-                                            else str(part)
-                                        )
-                                        for part in direct_content
-                                    ]
-                                ).strip()
+                                content_text = "".join([
+                                    (
+                                        part.get("text", "")
+                                        if isinstance(part, dict)
+                                        else str(part)
+                                    )
+                                    for part in direct_content
+                                ]).strip()
                             except Exception:
                                 pass
             except Exception:
@@ -1931,7 +1921,7 @@ class VibeVoiceDemo:
             raise e  # Re-raise the exception instead of falling back
 
 
-def create_demo_interface(demo_instance: VibeVoiceDemo):
+def create_demo_interface(demo_instance: VibeVoiceDemo) -> gr.Blocks:
     """Build the interactive Gradio interface for the VibeVoice demo.
 
     Args:
@@ -1950,7 +1940,7 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
         color: #e2e8f0;
     }
-    
+
     /* Header styling */
     .main-header {
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
@@ -1960,7 +1950,7 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         text-align: center;
         box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
     }
-    
+
     .main-header h1 {
         color: white;
         font-size: 2.5rem;
@@ -1968,13 +1958,13 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         margin: 0;
         text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
-    
+
     .main-header p {
         color: rgba(255,255,255,0.9);
         font-size: 1.1rem;
         margin: 0.5rem 0 0 0;
     }
-    
+
     /* Card styling */
     .settings-card, .generation-card {
         background: rgba(15, 23, 42, 0.8);
@@ -1986,7 +1976,7 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         color: #e2e8f0;
     }
-    
+
         /* Speaker selection styling */
     .speaker-grid {
         display: grid;
@@ -2002,7 +1992,7 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         color: #e2e8f0;
         font-weight: 500;
     }
-    
+
     /* Streaming indicator */
     .streaming-indicator {
         display: inline-block;
@@ -2013,13 +2003,13 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         margin-right: 8px;
         animation: pulse 1.5s infinite;
     }
-    
+
     @keyframes pulse {
         0% { opacity: 1; transform: scale(1); }
         50% { opacity: 0.5; transform: scale(1.1); }
         100% { opacity: 1; transform: scale(1); }
     }
-    
+
     /* Queue status styling */
     .queue-status {
         background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
@@ -2031,7 +2021,7 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         font-size: 0.9rem;
         color: #7dd3fc;
     }
-    
+
     .generate-btn {
         background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
         border: none;
@@ -2043,12 +2033,12 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         box-shadow: 0 4px 20px rgba(5, 150, 105, 0.4);
         transition: all 0.3s ease;
     }
-    
+
     .generate-btn:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 25px rgba(5, 150, 105, 0.6);
     }
-    
+
     .stop-btn {
         background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
         border: none;
@@ -2060,12 +2050,12 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
         box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
         transition: all 0.3s ease;
     }
-    
+
     .stop-btn:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 25px rgba(239, 68, 68, 0.6);
     }
-    
+
         /* Audio player styling */
     .audio-output {
         background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
@@ -2484,14 +2474,14 @@ Or paste text directly and it will auto-assign speakers.""",
                     elem_classes="log-output",
                 )
 
-        def update_speaker_visibility(num_speakers):
+        def update_speaker_visibility(num_speakers: int) -> list[dict[str, Any]]:
             """Compute visibility updates for each speaker dropdown.
 
             Args:
                 num_speakers: Number of speakers selected by the user.
 
             Returns:
-                list[gr.Update]: Visibility settings for the four speaker dropdown components.
+                list[dict[str, Any]]: Visibility updates for speaker dropdowns.
 
             """
             updates = []
@@ -2500,11 +2490,11 @@ Or paste text directly and it will auto-assign speakers.""",
             return updates
 
         # Refresh the list of voices from disk and update dropdowns
-        def refresh_voices():
+        def refresh_voices() -> list[dict[str, Any]]:
             """Reload voice presets from disk and update dropdown choices.
 
             Returns:
-                list[gr.Update]: Dropdown updates reflecting refreshed voice choices.
+                list[dict[str, Any]]: Dropdown updates for voice choices.
 
             """
             demo_instance.setup_voice_presets()
@@ -2526,7 +2516,9 @@ Or paste text directly and it will auto-assign speakers.""",
         )
 
         # Main generation function with streaming
-        def generate_podcast_wrapper(num_speakers, script, *speakers_and_params):
+        def generate_podcast_wrapper(
+            num_speakers: int, script: str, *speakers_and_params: object
+        ) -> Iterator[tuple]:
             """Invoke streaming generation and adapt outputs for the UI.
 
             Args:
@@ -2667,7 +2659,7 @@ Or paste text directly and it will auto-assign speakers.""",
                     gr.update(visible=False),
                 )
 
-        def stop_generation_handler():
+        def stop_generation_handler() -> tuple:
             """Stop generation and reset button state.
 
             Returns:
@@ -2684,7 +2676,7 @@ Or paste text directly and it will auto-assign speakers.""",
             )
 
         # Add a clear audio function
-        def clear_audio_outputs():
+        def clear_audio_outputs() -> tuple:
             """Clear audio outputs and hide the scene title before generation.
 
             Returns:
@@ -2740,7 +2732,7 @@ Or paste text directly and it will auto-assign speakers.""",
         )
 
         # Function to regenerate last prompt
-        def regenerate_last():
+        def regenerate_last() -> tuple[str, str, str]:
             """Regenerate content using the previously stored prompt data.
 
             Returns:
@@ -2807,13 +2799,13 @@ Or paste text directly and it will auto-assign speakers.""",
 
         # Function to generate AI-powered script
         def generate_ai_script(
-            num_speakers_current,
-            script_current,
-            speaker_1,
-            speaker_2,
-            speaker_3,
-            speaker_4,
-        ):
+            num_speakers_current: int,
+            script_current: str,
+            speaker_1: str,
+            speaker_2: str,
+            speaker_3: str,
+            speaker_4: str,
+        ) -> tuple[str, str, str]:
             """Generate a conversation script based on the current UI context.
 
             Args:
@@ -2826,9 +2818,6 @@ Or paste text directly and it will auto-assign speakers.""",
 
             Returns:
                 tuple[str, str, str]: Generated script, generated title, and the prompt that was sent to the LLM.
-
-            Raises:
-                Exception: If the LLM request fails.
 
             """
             try:
@@ -2885,7 +2874,7 @@ Or paste text directly and it will auto-assign speakers.""",
                 raise e  # Re-raise the exception instead of falling back
 
         # Model switching function
-        def switch_model(selected_model):
+        def switch_model(selected_model: str) -> tuple:
             """Switch to the selected model and refresh speaker dropdowns.
 
             Args:
@@ -2964,7 +2953,7 @@ Or paste text directly and it will auto-assign speakers.""",
     return interface
 
 
-def convert_to_16_bit_wav(data):
+def convert_to_16_bit_wav(data: np.ndarray | torch.Tensor) -> np.ndarray:
     """Convert audio data to 16-bit PCM samples.
 
     Args:
@@ -2990,7 +2979,7 @@ def convert_to_16_bit_wav(data):
     return data
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the VibeVoice demo.
 
     Returns:
@@ -3076,13 +3065,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    """Launch the VibeVoice Gradio demo using parsed CLI arguments.
-
-    Returns:
-        None: This function blocks while the Gradio interface is running.
-
-    """
+def main() -> None:
+    """Launch the VibeVoice Gradio demo using parsed CLI arguments."""
     args = parse_args()
 
     # ⚠️ SECURITY WARNING: Check for --share flag
