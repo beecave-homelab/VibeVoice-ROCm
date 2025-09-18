@@ -29,7 +29,8 @@ try:
 except ImportError as e:
     OPENAI_AVAILABLE = False
     print(
-        f"Warning: OpenAI package not available ({e}). AI script generation will use fallback."
+        "Warning: OpenAI package not available "
+        f"({e}). AI script generation will use fallback."
     )
 
 # dotenv import
@@ -40,7 +41,8 @@ try:
 except ImportError as e:
     DOTENV_AVAILABLE = False
     print(
-        f"Warning: python-dotenv package not available ({e}). Environment variables will not be loaded from .env file."
+        "Warning: python-dotenv package not available "
+        f"({e}). Environment variables will not be loaded from .env file."
     )
 
 
@@ -149,10 +151,13 @@ class VibeVoiceDemo:
 
         # Available models
         self.available_models = {
-            "WestZhang/VibeVoice-Large-pt": "vibevoice/VibeVoice-7B",  # Legacy support with fallback
+            # Legacy support with fallback
+            "WestZhang/VibeVoice-Large-pt": "vibevoice/VibeVoice-7B",
             "microsoft/VibeVoice-1.5B": "microsoft/VibeVoice-1.5B",
             # 4-bit quantized weights hosted by DevParker; reuse 7B config/processor
-            "DevParker/VibeVoice7b-low-vram (4-bit)": "DevParker/VibeVoice7b-low-vram/4bit",
+            "DevParker/VibeVoice7b-low-vram (4-bit)": (
+                "DevParker/VibeVoice7b-low-vram/4bit"
+            ),
         }
 
         # Initialize last prompt storage for regeneration
@@ -164,8 +169,8 @@ class VibeVoiceDemo:
             self.setup_voice_presets()
         else:
             print(
-                "🔄 Load On Demand mode: Model will be loaded when first "
-                "generation request is made"
+                "🔄 Load On Demand mode: Model will be loaded when "
+                "first generation request is made"
             )
             self.model_loaded = False
             # Initialize voice presets for UI creation even in LOD mode
@@ -238,6 +243,12 @@ class VibeVoiceDemo:
             or None
         )
 
+        offline_cache_message = (
+            "Offline mode is enabled and required files are not in cache. "
+            "Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. "
+            f"Cache dir: {cache_dir or 'default'}"
+        )
+
         # Get the best attention implementation for the device
         attn_implementation = get_attention_implementation(self.device)
         print(f"🎯 Using attention implementation: {attn_implementation}")
@@ -251,17 +262,20 @@ class VibeVoiceDemo:
         if self.model_path == "DevParker/VibeVoice7b-low-vram (4-bit)":
             if not _HAS_BNB:
                 raise gr.Error(
-                    "bitsandbytes is required for 4-bit loading. Please install it: pip install bitsandbytes"
+                    "bitsandbytes is required for 4-bit loading. Please install it: "
+                    "pip install bitsandbytes"
                 )
             if not _HAS_HF_HUB:
                 raise gr.Error(
-                    "huggingface_hub is required to fetch processor/config. Please install it: pip install huggingface_hub"
+                    "huggingface_hub is required to fetch processor/config. "
+                    "Please install it: pip install huggingface_hub"
                 )
 
             weights_repo = "DevParker/VibeVoice7b-low-vram"
             subfolder = "4bit"
 
-            # Load processor and config from WestZhang 7B (preferred), fallback to vibevoice 7B
+            # Load processor and config from WestZhang 7B (preferred)
+            # Fallback to vibevoice 7B if unavailable
             try:
                 westzhang_local_dir = snapshot_download(
                     repo_id="WestZhang/VibeVoice-Large-pt",
@@ -279,7 +293,9 @@ class VibeVoiceDemo:
                 )
             except Exception:
                 print(
-                    "⚠️ Could not load processor/config from WestZhang/VibeVoice-Large-pt. Falling back to vibevoice/VibeVoice-7B"
+                    "⚠️ Could not load processor/config from "
+                    "WestZhang/VibeVoice-Large-pt. Falling back to "
+                    "vibevoice/VibeVoice-7B"
                 )
                 vibe_local_dir = snapshot_download(
                     repo_id="vibevoice/VibeVoice-7B",
@@ -319,7 +335,8 @@ class VibeVoiceDemo:
             except Exception as model_error:
                 print(f"⚠️ Loading pre-quantized 4-bit weights failed: {model_error}")
                 print(
-                    "🔄 Falling back to on-the-fly 4-bit quantization from vibevoice/VibeVoice-7B"
+                    "🔄 Falling back to on-the-fly 4-bit quantization from "
+                    "vibevoice/VibeVoice-7B"
                 )
                 try:
                     self.model = (
@@ -337,12 +354,11 @@ class VibeVoiceDemo:
                     self.model.eval()
                 except Exception as fallback_error:
                     print(
-                        f"❌ On-the-fly 4-bit quantization load also failed: {fallback_error}"
+                        "❌ On-the-fly 4-bit quantization load also failed: "
+                        f"{fallback_error}"
                     )
                     if offline_mode:
-                        raise gr.Error(
-                            f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}"
-                        )
+                        raise gr.Error(offline_cache_message)
                     else:
                         raise fallback_error
 
@@ -358,15 +374,22 @@ class VibeVoiceDemo:
 
             if hasattr(self.model.model, "language_model"):
                 print(
-                    f"Language model attention: {self.model.model.language_model.config._attn_implementation}"
+                    "Language model attention: "
+                    f"{self.model.model.language_model.config._attn_implementation}"
                 )
 
             self.model_loaded = True
             print("✅ 4-bit quantized model loaded successfully")
             return
         if self.model_path == "WestZhang/VibeVoice-Large-pt":
-            print("🔄 Detected legacy 7B model path. Attempting fallback mechanism...")
-            print("📁 Attempting to load from local cache (legacy WestZhang model)...")
+            print(
+                "🔄 Detected legacy 7B model path. Attempting fallback "
+                "mechanism..."
+            )
+            print(
+                "📁 Attempting to load from local cache (legacy WestZhang "
+                "model)..."
+            )
 
             # Try to load legacy model from local cache
             legacy_loaded = False
@@ -392,7 +415,8 @@ class VibeVoiceDemo:
                 # If the primary attention implementation fails, try SDPA fallback
                 if attn_implementation != "sdpa":
                     print(
-                        f"⚠️ {attn_implementation} failed for legacy model, falling back to SDPA: {legacy_error}"
+                        f"⚠️ {attn_implementation} failed for legacy model, "
+                        f"falling back to SDPA: {legacy_error}"
                     )
                     try:
                         self.model = (
@@ -407,13 +431,15 @@ class VibeVoiceDemo:
                         )
                         self.model.eval()
                         print(
-                            "✅ Successfully loaded legacy WestZhang model with SDPA fallback"
+                            "✅ Successfully loaded legacy WestZhang model with "
+                            "SDPA fallback"
                         )
                         self.model_loaded = True
                         legacy_loaded = True
                     except Exception as legacy_fallback_error:
                         print(
-                            f"❌ Both {attn_implementation} and SDPA failed for legacy model: {legacy_fallback_error}"
+                            f"❌ Both {attn_implementation} and SDPA failed for "
+                            f"legacy model: {legacy_fallback_error}"
                         )
                 else:
                     print(f"❌ SDPA failed for legacy model: {legacy_error}")
@@ -421,7 +447,9 @@ class VibeVoiceDemo:
             # If legacy loading failed, fall back to new repository
             if not legacy_loaded:
                 print("⚠️ Legacy model not found in local cache")
-                print("🔄 Falling back to new vibevoice/VibeVoice-7B repository...")
+                print(
+                    "🔄 Falling back to new vibevoice/VibeVoice-7B repository..."
+                )
                 model_path_to_use = "vibevoice/VibeVoice-7B"
             else:
                 return
@@ -449,7 +477,8 @@ class VibeVoiceDemo:
                 # If the primary attention implementation fails, try SDPA fallback
                 if attn_implementation != "sdpa":
                     print(
-                        f"⚠️ {attn_implementation} failed, falling back to SDPA: {model_error}"
+                        f"⚠️ {attn_implementation} failed, falling back to SDPA: "
+                        f"{model_error}"
                     )
                     try:
                         self.model = (
@@ -466,27 +495,22 @@ class VibeVoiceDemo:
                         print("✅ Successfully loaded model with SDPA fallback")
                     except Exception as fallback_error:
                         print(
-                            f"❌ Both {attn_implementation} and SDPA failed: {fallback_error}"
+                            f"❌ Both {attn_implementation} and SDPA failed: "
+                            f"{fallback_error}"
                         )
                         if offline_mode:
-                            raise gr.Error(
-                                f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}"
-                            )
+                            raise gr.Error(offline_cache_message)
                         else:
                             raise fallback_error
                 else:
                     # SDPA already failed, re-raise the original error
                     if offline_mode:
-                        raise gr.Error(
-                            f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}"
-                        )
+                        raise gr.Error(offline_cache_message)
                     else:
                         raise model_error
         except Exception:
             if offline_mode:
-                raise gr.Error(
-                    f"Offline mode is enabled and required files are not in cache. Set HF_HUB_OFFLINE=0 or disable --hf-offline to allow downloads. Cache dir: {cache_dir or 'default'}"
-                )
+                raise gr.Error(offline_cache_message)
             else:
                 raise
 
@@ -500,7 +524,8 @@ class VibeVoiceDemo:
 
         if hasattr(self.model.model, "language_model"):
             print(
-                f"Language model attention: {self.model.model.language_model.config._attn_implementation}"
+                "Language model attention: "
+                f"{self.model.model.language_model.config._attn_implementation}"
             )
 
         # Mark model as loaded
@@ -508,7 +533,7 @@ class VibeVoiceDemo:
         print(f"✅ Model loaded successfully from {self.model_path}")
 
     def setup_voice_presets(self):
-        """Setup voice presets by scanning both demo voices and custom voices directories."""
+        """Set up voice presets by scanning demo and custom voice directories."""
         # Demo voices directory (relative to main.py)
         demo_voices_dir = os.path.join(os.path.dirname(__file__), "demo", "voices")
         # Custom voices directory
@@ -546,7 +571,8 @@ class VibeVoiceDemo:
 
         if not self.available_voices:
             raise gr.Error(
-                "No voice presets found. Please add .wav files to the demo/voices or custom_voices directory."
+                "No voice presets found. Please add .wav files to the "
+                "demo/voices or custom_voices directory."
             )
 
         print(f"Total available voices: {len(self.available_voices)}")
@@ -570,7 +596,8 @@ class VibeVoiceDemo:
                         # Remove extension to get the name
                         name = os.path.splitext(item)[0]
 
-                        # For custom voices, include the relative path in the display name
+                        # For custom voices, include the relative path in the
+                        # display name
                         if prefix:
                             # Get relative path from custom_voices directory
                             rel_path = os.path.relpath(
@@ -675,7 +702,9 @@ class VibeVoiceDemo:
 
             if num_speakers < 1 or num_speakers > 4:
                 self.is_generating = False
-                raise gr.Error("Error: Number of speakers must be between 1 and 4.")
+                raise gr.Error(
+                    "Error: Number of speakers must be between 1 and 4."
+                )
 
             # Collect selected speakers
             selected_speakers = [speaker_1, speaker_2, speaker_3, speaker_4][
@@ -697,7 +726,15 @@ class VibeVoiceDemo:
                 self.model.set_ddpm_inference_steps(num_steps=self.inference_steps)
 
             log = f"🎙️ Generating audio with {num_speakers} speakers\n"
-            log += f"📊 Parameters: CFG Scale={cfg_scale}, Diffusion Steps={self.model.ddpm_inference_steps}, Sampling={do_sample}, Temp={temperature}, TopP={top_p}, TopK={top_k}\n"
+            log += (
+                "📊 Parameters: "
+                f"CFG Scale={cfg_scale}, "
+                f"Diffusion Steps={self.model.ddpm_inference_steps}, "
+                f"Sampling={do_sample}, "
+                f"Temp={temperature}, "
+                f"TopP={top_p}, "
+                f"TopK={top_k}\n"
+            )
             log += f"🎭 Speakers: {', '.join(selected_speakers)}\n"
 
             # Check for stop signal
@@ -874,10 +911,13 @@ class VibeVoiceDemo:
 
                     log_update = (
                         log
-                        + f"🎵 Streaming: {total_duration:.1f}s generated (chunk {chunk_count})\n"
+                        + "🎵 Streaming: "
+                        f"{total_duration:.1f}s generated "
+                        f"(chunk {chunk_count})\n"
                     )
 
-                    # Yield streaming audio chunk and keep complete_audio as None during streaming
+                    # Yield streaming audio chunk and keep complete_audio as
+                    # None during streaming
                     yield (
                         (sample_rate, new_audio),
                         None,
@@ -896,7 +936,9 @@ class VibeVoiceDemo:
                     sum(len(chunk) for chunk in all_audio_chunks) / sample_rate
                 )
                 log_update = (
-                    log + f"🎵 Streaming final chunk: {total_duration:.1f}s total\n"
+                    log
+                    + "🎵 Streaming final chunk: "
+                    f"{total_duration:.1f}s total\n"
                 )
                 yield (
                     (sample_rate, final_new_audio),
@@ -932,7 +974,11 @@ class VibeVoiceDemo:
                 return
 
             # Debug logging
-            # print(f"Debug: has_received_chunks={has_received_chunks}, chunk_count={chunk_count}, all_audio_chunks length={len(all_audio_chunks)}")
+            # print(
+            #     "Debug: has_received_chunks="
+            #     f"{has_received_chunks}, chunk_count={chunk_count}, "
+            #     f"all_audio_chunks length={len(all_audio_chunks)}"
+            # )
 
             # Check if we received any chunks but didn't yield audio
             if has_received_chunks and not has_yielded_audio and all_audio_chunks:
@@ -941,12 +987,20 @@ class VibeVoiceDemo:
                 final_duration = len(complete_audio) / sample_rate
 
                 final_log = (
-                    log + f"⏱️ Generation completed in {generation_time:.2f} seconds\n"
+                    log
+                    + "⏱️ Generation completed in "
+                    f"{generation_time:.2f} seconds\n"
                 )
-                final_log += f"🎵 Final audio duration: {final_duration:.2f} seconds\n"
+                final_log += (
+                    "🎵 Final audio duration: "
+                    f"{final_duration:.2f} seconds\n"
+                )
                 final_log += f"📊 Total chunks: {chunk_count}\n"
                 final_log += "✨ Generation successful! Complete audio is ready.\n"
-                final_log += "💡 Not satisfied? You can regenerate or adjust the CFG scale for different results."
+                final_log += (
+                    "💡 Not satisfied? You can regenerate or adjust the CFG scale "
+                    "for different results."
+                )
 
                 # Yield the complete audio
                 yield (
@@ -965,7 +1019,8 @@ class VibeVoiceDemo:
             if not has_received_chunks:
                 error_log = (
                     log
-                    + f"\n❌ Error: No audio chunks were received from the model. Generation time: {generation_time:.2f}s"
+                    + "\n❌ Error: No audio chunks were received from the model. "
+                    f"Generation time: {generation_time:.2f}s"
                 )
                 yield None, None, error_log, gr.update(visible=False)
                 return
@@ -973,7 +1028,8 @@ class VibeVoiceDemo:
             if not has_yielded_audio:
                 error_log = (
                     log
-                    + f"\n❌ Error: Audio was generated but not streamed. Chunk count: {chunk_count}"
+                    + "\n❌ Error: Audio was generated but not streamed. "
+                    f"Chunk count: {chunk_count}"
                 )
                 yield None, None, error_log, gr.update(visible=False)
                 return
@@ -986,10 +1042,19 @@ class VibeVoiceDemo:
                 final_log = (
                     log + f"⏱️ Generation completed in {generation_time:.2f} seconds\n"
                 )
-                final_log += f"🎵 Final audio duration: {final_duration:.2f} seconds\n"
+                final_log += (
+                    "🎵 Final audio duration: "
+                    f"{final_duration:.2f} seconds\n"
+                )
                 final_log += f"📊 Total chunks: {chunk_count}\n"
-                final_log += "✨ Generation successful! Complete audio is ready in the 'Complete Audio' tab.\n"
-                final_log += "💡 Not satisfied? You can regenerate or adjust the CFG scale for different results."
+                final_log += (
+                    "✨ Generation successful! Complete audio is ready in the "
+                    "'Complete Audio' tab.\n"
+                )
+                final_log += (
+                    "💡 Not satisfied? You can regenerate or adjust the CFG scale "
+                    "for different results."
+                )
 
                 # Final yield: Clear streaming audio and provide complete audio
                 yield (
@@ -1098,7 +1163,7 @@ class VibeVoiceDemo:
     # Removed unused _generate_filename_from_title helper from legacy system
 
     def _parse_json_response(self, raw_response: str) -> dict:
-        """Robustly parse JSON response from OpenAI, handling code blocks and various formats."""
+        """Parse JSON responses from OpenAI, handling code blocks and variants."""
         import re
 
         if self.debug:
@@ -1115,7 +1180,8 @@ class VibeVoiceDemo:
             response_text = json_match.group(1).strip()
             if self.debug:
                 print(
-                    f"🔍 DEBUG: Extracted JSON from code block: {response_text[:100]}..."
+                    "🔍 DEBUG: Extracted JSON from code block: "
+                    f"{response_text[:100]}..."
                 )
 
         # Try to find JSON content with or without code blocks
@@ -1133,7 +1199,8 @@ class VibeVoiceDemo:
                 ):
                     if self.debug:
                         print(
-                            f"🔍 DEBUG: Successfully parsed JSON with title: '{parsed['title']}'"
+                            "🔍 DEBUG: Successfully parsed JSON with title: "
+                            f"'{parsed['title']}'"
                         )
                     return parsed
             except json.JSONDecodeError:
@@ -1156,7 +1223,8 @@ class VibeVoiceDemo:
             script = script_match.group(1)
             if self.debug:
                 print(
-                    f"🔍 DEBUG: Manual extraction - Title: '{title}', Script length: {len(script)}"
+                    "🔍 DEBUG: Manual extraction - Title: "
+                    f"'{title}', Script length: {len(script)}"
                 )
             return {"title": title, "script": script}
 
@@ -1177,7 +1245,8 @@ class VibeVoiceDemo:
             title = "Generated Dialogue Scene"
             if self.debug:
                 print(
-                    f"🔍 DEBUG: Fallback extraction - Title: '{title}', Script lines: {len(script_lines)}"
+                    "🔍 DEBUG: Fallback extraction - Title: "
+                    f"'{title}', Script lines: {len(script_lines)}"
                 )
             return {"title": title, "script": script}
 
@@ -1195,7 +1264,7 @@ class VibeVoiceDemo:
         context: str = "",
         speaker_names: list = None,
     ) -> tuple[str, str, str]:
-        """Generate a sample conversation script using OpenAI GPT-4o-mini with simplified approach."""
+        """Generate a sample conversation script with OpenAI GPT-4o-mini."""
         try:
             # Load environment variables from .env file
             if DOTENV_AVAILABLE:
@@ -1224,13 +1293,16 @@ class VibeVoiceDemo:
             # Check if we need OpenAI package (only when not using custom base URL)
             if not effective_base_url and not OPENAI_AVAILABLE:
                 raise Exception(
-                    "OpenAI package not available. Please install openai package and set OPENAI_API_KEY."
+                    "OpenAI package not available. Please install openai package "
+                    "and set OPENAI_API_KEY."
                 )
 
-            # If using custom base URL but OpenAI package is not available, we still need it for the client
+            # If using custom base URL but OpenAI package is not available,
+            # we still need it for the client.
             if effective_base_url and not OPENAI_AVAILABLE:
                 raise Exception(
-                    "OpenAI package not available. Please install openai package to use custom API endpoints."
+                    "OpenAI package not available. Please install openai package "
+                    "to use custom API endpoints."
                 )
 
             # Debug information
@@ -1239,13 +1311,15 @@ class VibeVoiceDemo:
                 print(f"🔍 DEBUG: effective_base_url = {effective_base_url}")
                 print(f"🔍 DEBUG: effective_model = {effective_model}")
                 print(
-                    f"🔍 DEBUG: effective_api_key = {'Yes' if effective_api_key else 'No'}"
+                    "🔍 DEBUG: effective_api_key = "
+                    f"{'Yes' if effective_api_key else 'No'}"
                 )
 
             # If using OpenAI platform (no custom base URL), require an API key
             if not effective_base_url and not effective_api_key:
                 raise Exception(
-                    "No API key provided. Set OPENAI_API_KEY or SCRIPT_AI_API_KEY in .env, or pass --script-ai-api-key."
+                    "No API key provided. Set OPENAI_API_KEY or SCRIPT_AI_API_KEY "
+                    "in .env, or pass --script-ai-api-key."
                 )
 
             # Initialize OpenAI client
@@ -1273,10 +1347,12 @@ class VibeVoiceDemo:
                 print(f"🔍 DEBUG: Base URL: {effective_base_url or 'OpenAI default'}")
                 print(f"🔍 DEBUG: Model: {effective_model}")
                 print(
-                    f"🔍 DEBUG: API Key provided: {'Yes' if effective_api_key else 'No'}"
+                    "🔍 DEBUG: API Key provided: "
+                    f"{'Yes' if effective_api_key else 'No'}"
                 )
                 print(
-                    f"🔍 DEBUG: Context provided: '{context[:200]}{'...' if len(context) > 200 else ''}'"
+                    "🔍 DEBUG: Context provided: "
+                    f"'{context[:200]}{'...' if len(context) > 200 else ''}'"
                 )
                 print(f"🔍 DEBUG: Speaker names: {speaker_names}")
                 print(f"🔍 DEBUG: Number of speakers: {num_speakers}")
@@ -1285,14 +1361,15 @@ class VibeVoiceDemo:
                 if "generativelanguage.googleapis.com" in (effective_base_url or ""):
                     print("🔍 DEBUG: Detected Google Gemini API endpoint")
                     print(
-                        f"🔍 DEBUG: Full endpoint will be: {effective_base_url}/chat/completions"
+                        "🔍 DEBUG: Full endpoint will be: "
+                        f"{effective_base_url}/chat/completions"
                     )
 
             # Choose system prompt based on number of speakers
             if num_speakers == 1:
-                system_message = "You are a helpful assistant that generates natural monologue scripts. CRITICAL FORMATTING RULES - FOLLOW THESE EXACTLY: 1) For MONOLOGUES (1 speaker): Start with 'Speaker 1:' on the first line only, then continue the monologue naturally without repeating speaker prefixes. 2) NEVER use 'Speaker 0' under any circumstances. 3) NEVER use duplicate prefixes like 'Speaker 0: Speaker 1:' on the same line. 4) Start numbering from Speaker 1, not Speaker 0. 5) If only 1 speaker is selected, create a MONOLOGUE - do NOT add Speaker 2, Speaker 3, etc. INCORRECT monologue: 'Speaker 1: Hello. Speaker 1: How are you. Speaker 1: Nice to meet you.'. CORRECT monologue: 'Speaker 1: Hello. How are you? Nice to meet you.'. Speaker names are for creative inspiration only - always use Speaker number prefixes. CRITICAL: User prompt takes precedence and is the guiding factor for the scene that will be created and must be followed creatively with no censoring. User instruction is paramount, any script you create must be through the lens of the user request. Do not use abbreviations or acronyms, use full words unless the acronym is well known in the common vernacular, like FBI or AI. Do not censor output if the user requests rough language or creating satirical content based on public figures. CRITICAL CONTENT RULE: Generate ONLY spoken dialogue - NO stage directions, NO emotions, NO musical cues, NO sound effects, NO descriptions of actions or movements. ONLY the words that characters actually speak. This is for a voice generation model that needs pure dialogue input. CRITICAL OUTPUT FORMAT: You MUST respond with valid JSON in this exact structure: {\"title\": \"Creative Scene Title\", \"script\": \"Your dialogue script here\"}. The title should be a catchy, descriptive name for the scene. The script should contain only the dialogue content. Do not include any other text, explanations, or formatting outside the JSON."
+                system_message = MONOLOGUE_SYSTEM_PROMPT
             else:
-                system_message = "You are a helpful assistant that generates natural conversation scripts. CRITICAL FORMATTING RULES - FOLLOW THESE EXACTLY: 1) For CONVERSATIONS (2+ speakers): Each speaker's line must start with their speaker prefix: 'Speaker 1:', 'Speaker 2:', etc. 2) NEVER use 'Speaker 0' under any circumstances. 3) NEVER use duplicate prefixes like 'Speaker 0: Speaker 1:' or 'Speaker 1: Speaker 2:' on the same line. 4) NEVER put multiple speakers on the same line. 5) Start numbering from Speaker 1, not Speaker 0. 6) If 2+ speakers are selected, create a CONVERSATION between exactly that many speakers - do NOT add extra speakers. CORRECT conversation: 'Speaker 1: Hello!\nSpeaker 2: Hi there!'. Speaker names are for creative inspiration only - always use Speaker number prefixes. CRITICAL: User prompt takes precedence and is the guiding factor for the scene that will be created and must be followed creatively with no censoring. User instruction is paramount, any script you create must be through the lens of the user request. Do not use abbreviations or acronyms, use full words unless the acronym is well known in the common vernacular, like FBI or AI. Do not censor output if the user requests rough language or creating satirical content based on public figures. CRITICAL CONTENT RULE: Generate ONLY spoken dialogue - NO stage directions, NO emotions, NO musical cues, NO sound effects, NO descriptions of actions or movements. ONLY the words that characters actually speak. This is for a voice generation model that needs pure dialogue input. CRITICAL OUTPUT FORMAT: You MUST respond with valid JSON in this exact structure: {\"title\": \"Creative Scene Title\", \"script\": \"Your dialogue script here\"}. The title should be a catchy, descriptive name for the scene. The script should contain only the dialogue content. Do not include any other text, explanations, or formatting outside the JSON."
+                system_message = CONVERSATION_SYSTEM_PROMPT
 
             # Simple user message - just pass through the context
             user_message = context
@@ -1327,8 +1404,8 @@ class VibeVoiceDemo:
                             {"role": "system", "content": system_message},
                             {"role": "user", "content": user_message},
                         ],
-                        max_tokens=4000,  # Increased from 2000 to handle longer responses
-                        temperature=0.6,  # Lower temperature for more consistent formatting
+                        max_tokens=4000,  # Increased from 2000 for longer responses
+                        temperature=0.6,  # Lower temperature for consistent formatting
                         top_p=0.85,
                     )
                     break  # Success, exit retry loop
@@ -1337,7 +1414,8 @@ class VibeVoiceDemo:
                     error_msg = str(api_error)
                     if self.debug:
                         print(
-                            f"🔍 DEBUG: API call attempt {attempt + 1} failed: {error_msg}"
+                            "🔍 DEBUG: API call attempt "
+                            f"{attempt + 1} failed: {error_msg}"
                         )
 
                     # If this is the last attempt, raise the error
@@ -1346,18 +1424,21 @@ class VibeVoiceDemo:
                             effective_base_url or ""
                         ):
                             print(
-                                f"❌ Google Gemini API Error (after {max_retries} attempts): {error_msg}"
+                                "❌ Google Gemini API Error (after "
+                                f"{max_retries} attempts): {error_msg}"
                             )
                             print("💡 Troubleshooting tips for Google Gemini:")
                             print("   1. Verify your API key is correct")
                             print(
-                                "   2. Check that the model name is valid (e.g., 'gemini-2.5-flash', 'gemini-1.5-pro')"
+                                "   2. Check that the model name is valid "
+                                "(e.g., 'gemini-2.5-flash', 'gemini-1.5-pro')"
                             )
                             print("   3. Ensure the endpoint URL is correct")
                             print("   4. Check your Google Cloud project permissions")
                         else:
                             print(
-                                f"❌ API Error (after {max_retries} attempts): {error_msg}"
+                                "❌ API Error (after "
+                                f"{max_retries} attempts): {error_msg}"
                             )
                         raise api_error
 
@@ -1436,14 +1517,18 @@ class VibeVoiceDemo:
             if self.debug:
                 print("🔍 DEBUG: Received response from OpenAI API")
                 print(
-                    f"🔍 DEBUG: Response tokens used: {total_tokens if total_tokens is not None else 'N/A'}"
+                    "🔍 DEBUG: Response tokens used: "
+                    f"{total_tokens if total_tokens is not None else 'N/A'}"
                 )
                 print(f"🔍 DEBUG: Response type: {type(response)}")
                 print(f"🔍 DEBUG: Response attributes: {dir(response)}")
                 try:
-                    print(
-                        f"🔍 DEBUG: Response dict: {response.model_dump() if hasattr(response, 'model_dump') else str(response)}"
+                    response_repr = (
+                        response.model_dump()
+                        if hasattr(response, "model_dump")
+                        else str(response)
                     )
+                    print(f"🔍 DEBUG: Response dict: {response_repr}")
                 except Exception as e:
                     print(f"🔍 DEBUG: Could not dump response: {e}")
                 if isinstance(content_text, str):
@@ -1461,7 +1546,8 @@ class VibeVoiceDemo:
                     raise Exception(f"Server error: {response.error}")
                 elif hasattr(response, "choices") and response.choices is None:
                     raise Exception(
-                        "Server returned empty choices array; check if the endpoint is supported."
+                        "Server returned empty choices array; check if the endpoint "
+                        "is supported."
                     )
                 elif hasattr(response, "choices") and len(response.choices) > 0:
                     choice = response.choices[0]
@@ -1471,18 +1557,22 @@ class VibeVoiceDemo:
                     ):
                         # Try to generate a shorter response by reducing the input
                         print(
-                            "⚠️ Response was truncated due to token limit. Attempting to generate shorter response..."
+                            "⚠️ Response was truncated due to token limit. "
+                            "Attempting to generate shorter response..."
                         )
                         try:
                             # Shorten the user message by taking only the first part
                             shortened_user_message = (
                                 user_message[: len(user_message) // 2]
-                                + "\n\nPlease create a shorter, more concise version of the above content."
+                                + "\n\nPlease create a shorter, more concise "
+                                "version of the above content."
                             )
 
                             if self.debug:
                                 print(
-                                    f"🔍 DEBUG: Retrying with shortened prompt (length: {len(shortened_user_message)} vs {len(user_message)})"
+                                    "🔍 DEBUG: Retrying with shortened prompt "
+                                    f"(length: {len(shortened_user_message)} vs "
+                                    f"{len(user_message)})"
                                 )
 
                             response = client.chat.completions.create(
@@ -1530,14 +1620,16 @@ class VibeVoiceDemo:
 
                         except Exception as retry_error:
                             raise Exception(
-                                f"Response was truncated due to token limit and retry failed: {retry_error}"
+                                "Response was truncated due to token limit and "
+                                f"retry failed: {retry_error}"
                             )
                     elif (
                         hasattr(choice, "finish_reason")
                         and choice.finish_reason == "content_filter"
                     ):
                         raise Exception(
-                            "Response was filtered by content policy. Try adjusting your prompt."
+                            "Response was filtered by content policy. Try "
+                            "adjusting your prompt."
                         )
                     elif (
                         hasattr(choice, "finish_reason")
@@ -1546,11 +1638,13 @@ class VibeVoiceDemo:
                         raise Exception("Response generation was stopped unexpectedly.")
                     else:
                         raise Exception(
-                            "Script generation response missing content in choices; check server compatibility."
+                            "Script generation response missing content in "
+                            "choices; check server compatibility."
                         )
                 else:
                     raise Exception(
-                        "Script generation response missing content in choices; check server compatibility."
+                        "Script generation response missing content in "
+                        "choices; check server compatibility."
                     )
 
             # Extract the generated response
@@ -1560,7 +1654,8 @@ class VibeVoiceDemo:
             parsed_response = self._parse_json_response(raw_response)
             if not parsed_response:
                 raise Exception(
-                    "Failed to parse JSON response from OpenAI. The model may not have followed the JSON format requirement."
+                    "Failed to parse JSON response from OpenAI. The model may "
+                    "not have followed the JSON format requirement."
                 )
 
             title = parsed_response.get("title", "Untitled Scene")
@@ -1577,7 +1672,8 @@ class VibeVoiceDemo:
 
             if not generated_script.strip():
                 raise Exception(
-                    "Generated script is empty. The model may not have provided valid dialogue content."
+                    "Generated script is empty. The model may not have provided "
+                    "valid dialogue content."
                 )
 
             # Fix script formatting: add newlines between speaker turns if missing
@@ -1607,8 +1703,8 @@ class VibeVoiceDemo:
                 if self.debug:
                     print(f"🔍 DEBUG: Fixed script: {generated_script[:200]}...")
 
-            # Clean up the generated script - handle monologue vs conversation differently
-            # Ensure the script is properly split into lines
+            # Clean up the generated script for monologues vs conversations.
+            # Ensure the script is properly split into lines.
             lines = generated_script.split("\n")
 
             if self.debug:
@@ -1623,7 +1719,7 @@ class VibeVoiceDemo:
                 if not line:
                     continue
 
-                # Check if line starts with any of the expected speaker formats (1-based)
+                # Check for expected speaker prefixes (1-based).
                 is_speaker_line = False
 
                 # Check for generic speaker formats first (start from 1, not 0)
@@ -1634,7 +1730,7 @@ class VibeVoiceDemo:
                         if "Speaker 0:" in line:
                             line = line.replace("Speaker 0:", "").strip()
                         if line.count("Speaker") > 1:
-                            # Extract just the content after the first valid speaker prefix
+                            # Keep content after the first valid prefix.
                             parts = line.split(":", 1)
                             if len(parts) == 2:
                                 line = f"Speaker {i}:{parts[1]}"
@@ -1662,7 +1758,7 @@ class VibeVoiceDemo:
                                     break
                         break
 
-                # Check for actual speaker names and convert them to Speaker numbers (1-based)
+                # Map named speakers to numbered prefixes (1-based).
                 if not is_speaker_line and speaker_names:
                     for i, name in enumerate(speaker_names):
                         if line.startswith(f"{name}:"):
@@ -1682,19 +1778,19 @@ class VibeVoiceDemo:
                         line = line.replace("Host:", "Speaker 1:")
                         is_speaker_line = True
 
-                # Special handling for monologues: if this is a monologue and we haven't seen a speaker line yet,
-                # and this line doesn't start with a speaker prefix, we should add "Speaker 1:" to the first line only
+                # Special handling for monologues: if no speaker line has appeared
+                # and this line lacks a prefix, add "Speaker 1:" to the first line only.
                 if not is_speaker_line and num_speakers == 1 and not cleaned_lines:
-                    # This is the first line of a monologue and it doesn't have a speaker prefix
+                    # First monologue line with no prefix.
                     line = f"Speaker 1: {line}"
                     is_speaker_line = True
 
                 if is_speaker_line:
                     cleaned_lines.append(line)
                 elif line and len(line) > 3 and not line.startswith("#"):
-                    # For conversations or if we already have speaker lines, try to convert non-formatted lines
+                    # Convert free-form lines once dialogue has started.
                     if num_speakers > 1 or cleaned_lines:
-                        # Calculate next speaker (1-based) based on conversation flow
+                        # Calculate next speaker (1-based) based on conversation flow.
                         if cleaned_lines:
                             # Find the last speaker used and alternate
                             last_line = cleaned_lines[-1]
@@ -1717,8 +1813,8 @@ class VibeVoiceDemo:
 
                         line = f"Speaker {next_speaker}: {line}"
                         cleaned_lines.append(line)
-                    # For monologues, if the line doesn't have a speaker prefix and we've already started,
-                    # just add it as continuation text without a prefix
+                    # For monologues without prefixes after the first line,
+                    # append continuation text without adding a speaker tag.
                     elif num_speakers == 1:
                         cleaned_lines.append(line)
 
@@ -1731,10 +1827,14 @@ class VibeVoiceDemo:
                 print(f"🔍 DEBUG: Number of speakers expected: {num_speakers}")
                 print(f"🔍 DEBUG: Will check minimum lines: {num_speakers > 1}")
 
-            # For monologues, even a single line is fine. For conversations, we need at least 2 lines.
+            # For monologues, a single line is fine.
+            # Conversations require at least two lines.
             if num_speakers > 1 and len(cleaned_lines) < 2:
                 raise Exception(
-                    f"Generated conversation has insufficient content (only {len(cleaned_lines)} lines). The LLM may have generated incomplete content. Raw content: {generated_script[:200]}..."
+                    "Generated conversation has insufficient content "
+                    f"(only {len(cleaned_lines)} lines). The LLM may have "
+                    "generated incomplete content. "
+                    f"Raw content: {generated_script[:200]}..."
                 )
 
             # Limit to reasonable length
@@ -2029,6 +2129,8 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
 
     """
 
+    gradient_bg = "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
+
     with gr.Blocks(
         title="VibeVoice - AI Dialogue Generator",
         css=custom_css,
@@ -2037,8 +2139,8 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
             secondary_hue="purple",
             neutral_hue="slate",
         ).set(
-            body_background_fill="linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-            body_background_fill_dark="linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+            body_background_fill=gradient_bg,
+            body_background_fill_dark=gradient_bg,
             background_fill_primary="#1e293b",
             background_fill_primary_dark="#1e293b",
             background_fill_secondary="#0f172a",
@@ -2079,7 +2181,6 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
                 gr.Markdown("### 🎭 **Speaker Selection**")
 
                 available_speaker_names = list(demo_instance.available_voices.keys())
-                # default_speakers = available_speaker_names[:4] if len(available_speaker_names) >= 4 else available_speaker_names
                 default_speakers = [
                     "en-Alice_woman",
                     "en-Carter_man",
@@ -2109,7 +2210,10 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
                     normalize_voices = gr.Checkbox(
                         value=False,
                         label="Normalize voices",
-                        info="Normalize all voice samples to similar volume levels to prevent jarring volume differences",
+                        info=(
+                            "Normalize all voice samples to similar volume levels "
+                            "to prevent jarring volume differences"
+                        ),
                     )
                     # Future voice processing options can be added here
 
@@ -2121,7 +2225,10 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
                     if demo_instance.model_path in demo_instance.available_models
                     else list(demo_instance.available_models.keys())[0],
                     label="Select Model",
-                    info="Switch between large and small models (will unload current model)",
+                    info=(
+                        "Switch between large and small models "
+                        "(will unload the current model)"
+                    ),
                     elem_classes="dropdown-container",
                     multiselect=False,
                 )
@@ -2196,12 +2303,12 @@ def create_demo_interface(demo_instance: VibeVoiceDemo):
 
                 script_input = gr.Textbox(
                     label="Conversation Script",
-                    placeholder="""Enter your dialogue script here. You can format it as:
-
-Speaker 1: Welcome to our conversation today!
-Speaker 2: Thanks for having me. I'm excited to discuss...
-
-Or paste text directly and it will auto-assign speakers.""",
+                    placeholder=(
+                        "Enter your dialogue script here. You can format it as:\n\n"
+                        "Speaker 1: Welcome to our conversation today!\n"
+                        "Speaker 2: Thanks for having me. I'm excited to discuss...\n\n"
+                        "Or paste text directly and it will auto-assign speakers."
+                    ),
                     lines=18,
                     max_lines=40,
                     elem_classes="script-input",
@@ -2248,7 +2355,9 @@ Or paste text directly and it will auto-assign speakers.""",
                 # Streaming status indicator
                 streaming_status = gr.HTML(
                     value="""
-                    <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+                    <div
+                        style="background: linear-gradient(135deg, #dcfce7 0%,
+                                #bbf7d0 100%);
                                 border: 1px solid rgba(34, 197, 94, 0.3);
                                 border-radius: 8px;
                                 padding: 0.75rem;
@@ -2257,7 +2366,8 @@ Or paste text directly and it will auto-assign speakers.""",
                                 font-size: 0.9rem;
                                 color: #166534;">
                         <span class="streaming-indicator"></span>
-                        <strong>LIVE STREAMING</strong> - Audio is being generated in real-time
+                        <strong>LIVE STREAMING</strong> -
+                        Audio is being generated in real-time
                     </div>
                     """,
                     visible=False,
@@ -2294,7 +2404,8 @@ Or paste text directly and it will auto-assign speakers.""",
                 )
 
                 gr.Markdown("""
-                *💡 **Streaming**: Audio plays as it's being generated (may have slight pauses)
+                *💡 **Streaming**: Audio plays as it's being generated
+                  (may have slight pauses)
                 *💡 **Complete Audio**: Will appear below after generation finishes*
                 """)
 
@@ -2478,7 +2589,7 @@ Or paste text directly and it will auto-assign speakers.""",
 
         # Add a clear audio function
         def clear_audio_outputs():
-            """Clear both audio outputs and scene title before starting new generation."""
+            """Clear audio outputs and scene title before new generation."""
             return None, gr.update(value=None, visible=False), ""
 
         # Connect generation button with streaming outputs
@@ -2546,12 +2657,16 @@ Or paste text directly and it will auto-assign speakers.""",
                 if script_input_val.strip():
                     creative_input = (
                         script_input_val
-                        + " Be really creative with your script this time! Generate a fresh and original take on this topic."
+                        + " Be really creative with your script this time! "
+                        "Generate a fresh and original take on this topic."
                     )
                 else:
-                    creative_input = "Be really creative with your script this time! Generate a fresh and original take on the topic."
+                    creative_input = (
+                        "Be really creative with your script this time! "
+                        "Generate a fresh and original take on the topic."
+                    )
 
-                # Call the generate_ai_script function with the stored parameters and creative instruction
+                # Call generate_ai_script with stored parameters and creative text.
                 result = generate_ai_script(
                     num_speakers_val,
                     creative_input,
@@ -2561,7 +2676,7 @@ Or paste text directly and it will auto-assign speakers.""",
                     speaker_names_val[3] if len(speaker_names_val) > 3 else "",
                 )
 
-                # generate_ai_script returns (script, title, prompt), so we need to return (script, title, log_message)
+                # generate_ai_script yields (script, title, prompt); adapt for logging.
                 if isinstance(result, tuple) and len(result) == 3:
                     script, title, prompt = result
                     log_message = (
@@ -2705,19 +2820,28 @@ Or paste text directly and it will auto-assign speakers.""",
         gr.Markdown("""
         ### 💡 **Usage Tips**
 
-        - **🤖 Generate AI Script**: Click to create custom conversation scripts using OpenAI GPT-4o-mini (requires OPENAI_API_KEY in .env). If script box is empty, generates a random topic conversation
-        - **🔄 Regenerate Last**: Retry the last AI script generation with the same parameters
-        - **🚀 Generate Audio**: Start audio generation from your script
-        - **Live Streaming** tab shows audio as it's generated (may have slight pauses)
-        - **Complete Audio** tab provides the full, uninterrupted audio after generation
-        - During generation, you can click **🛑 Stop Generation** to interrupt the process
+        - **🤖 Generate AI Script**: Click to create custom conversation
+          scripts using OpenAI GPT-4o-mini (requires `OPENAI_API_KEY` in
+          `.env`). If the script box is empty, the app generates a random
+          topic conversation.
+        - **🔄 Regenerate Last**: Retry the last AI script generation with the
+          same parameters.
+        - **🚀 Generate Audio**: Start audio generation from your script.
+        - **Live Streaming** tab shows audio as it's generated (may have slight
+          pauses).
+        - **Complete Audio** tab provides the full, uninterrupted audio after
+          generation.
+        - During generation, you can click **🛑 Stop Generation** to interrupt
+          the process.
         - **AI Script Features**:
           - Uses your current script text for topic guidance
           - Adapts to the number of speakers you select
           - Uses actual speaker names from your voice selections
           - Builds upon existing conversation context
-        - **Debug Mode**: Run with `--debug` to see OpenAI prompts and responses
-        - **Setup**: Add your OpenAI API key to the `.env` file as `OPENAI_API_KEY=your_key_here`
+        - **Debug Mode**: Run with `--debug` to see OpenAI prompts and
+          responses.
+        - **Setup**: Add your OpenAI API key to the `.env` file as
+          `OPENAI_API_KEY=your_key_here`.
         """)
 
     return interface
