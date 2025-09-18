@@ -46,7 +46,12 @@ except ImportError as e:
 
 # Device detection and attention mechanism fallback
 def detect_device():
-    """Detect the best available device (CUDA, MPS, or CPU)."""
+    """Detect the best available compute device.
+
+    Returns:
+        tuple[str, str]: Device identifier and a human readable device name.
+
+    """
     if torch.cuda.is_available():
         return "cuda", torch.cuda.get_device_name(0)
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -56,7 +61,15 @@ def detect_device():
 
 
 def get_attention_implementation(device_type: str):
-    """Get the best available attention implementation for the device."""
+    """Select the optimal attention implementation for a device.
+
+    Args:
+        device_type: The device identifier returned by :func:`detect_device`.
+
+    Returns:
+        str: Name of the attention implementation supported by the device.
+
+    """
     if device_type == "cuda":
         flash_attn_available = importlib.util.find_spec("flash_attn") is not None
         if flash_attn_available:
@@ -94,12 +107,14 @@ try:
     _HAS_HF_HUB = True
 except Exception:
     _HAS_HF_HUB = False
-    
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class VibeVoiceDemo:
+    """Manage model loading, audio generation, and UI integration for the demo."""
+
     def __init__(
         self,
         model_path: str,
@@ -113,7 +128,25 @@ class VibeVoiceDemo:
         hf_offline: bool | None = None,
         hf_cache_dir: str | None = None,
     ) -> None:
-        """Initialize the VibeVoice demo with model loading."""
+        """Initialize the VibeVoice demo state and optionally load the model.
+
+        Args:
+            model_path: Repository or local path for the VibeVoice weights.
+            device: Preferred device identifier such as ``"cuda"`` or ``"cpu"``.
+            inference_steps: Number of diffusion steps used for generation.
+            debug: Whether to print verbose debugging output.
+            load_on_demand: Defer model loading until the first generation
+                request if set to ``True``.
+            script_ai_url: Base URL for an OpenAI-compatible script generation
+                service.
+            script_ai_model: Model identifier for the script generation
+                endpoint.
+            script_ai_api_key: API key for the script generation endpoint.
+            hf_offline: Whether to require offline mode when resolving Hugging
+                Face assets.
+            hf_cache_dir: Optional cache directory for Hugging Face downloads.
+
+        """
         self.model_path = model_path
 
         # Auto-detect device if not specified
@@ -174,13 +207,18 @@ class VibeVoiceDemo:
         # Removed legacy stop words storage from deprecated script system
 
     def ensure_model_loaded(self) -> None:
-        """Ensure model is loaded, load it if not already loaded."""
+        """Ensure that the model weights and processor are initialized.
+
+        Raises:
+            gr.Error: If loading the model fails while in offline mode.
+
+        """
         if not self.model_loaded:
             self.load_model()
             # Voice presets are already set up in __init__, no need to call again
 
     def unload_model(self) -> None:
-        """Unload the model to free VRAM."""
+        """Unload the active model to free GPU or system memory."""
         if self.model_loaded and self.model is not None:
             print(f"Unloading model from {self.model_path} to free VRAM")
             # Clear model and processor from memory
@@ -199,7 +237,16 @@ class VibeVoiceDemo:
                 torch.cuda.empty_cache()
 
     def switch_model(self, new_model_path: str) -> bool:
-        """Switch to a different model, unloading the current one if loaded."""
+        """Switch to a different model, unloading the current one if needed.
+
+        Args:
+            new_model_path: Repository or filesystem path of the replacement
+                model.
+
+        Returns:
+            bool: ``True`` if the model switch succeeded.
+
+        """
         if new_model_path == self.model_path:
             print(f"Model {new_model_path} is already loaded")
             return True
@@ -218,7 +265,13 @@ class VibeVoiceDemo:
         return True
 
     def load_model(self) -> None:
-        """Load the VibeVoice model and processor."""
+        """Load the VibeVoice processor and model weights into memory.
+
+        Raises:
+            gr.Error: If offline loading is requested but assets are missing.
+            Exception: If model initialization fails unexpectedly.
+
+        """
         print(f"Loading processor & model from {self.model_path}")
 
         # Determine offline and cache settings
@@ -508,7 +561,12 @@ class VibeVoiceDemo:
         print(f"✅ Model loaded successfully from {self.model_path}")
 
     def setup_voice_presets(self):
-        """Setup voice presets by scanning both demo voices and custom voices directories."""
+        """Discover available voice presets from bundled and custom assets.
+
+        Raises:
+            gr.Error: If no compatible audio presets are found on disk.
+
+        """
         # Demo voices directory (relative to main.py)
         demo_voices_dir = os.path.join(os.path.dirname(__file__), "demo", "voices")
         # Custom voices directory
@@ -552,21 +610,31 @@ class VibeVoiceDemo:
         print(f"Total available voices: {len(self.available_voices)}")
 
     def _scan_voice_directory(self, directory: str, prefix: str, voice_dict: dict):
-        """Recursively scan a directory for voice files."""
+        """Populate ``voice_dict`` with voices discovered under ``directory``.
+
+        Args:
+            directory: Directory path that should be scanned for audio files.
+            prefix: Directory prefix used to namespace custom voices in the UI.
+            voice_dict: Dictionary that is updated in-place with discovered
+                voices mapped to absolute file paths.
+
+        """
         try:
             for item in os.listdir(directory):
                 item_path = os.path.join(directory, item)
 
                 if os.path.isfile(item_path):
                     # Check if it's an audio file
-                    if item.lower().endswith((
-                        ".wav",
-                        ".mp3",
-                        ".flac",
-                        ".ogg",
-                        ".m4a",
-                        ".aac",
-                    )):
+                    if item.lower().endswith(
+                        (
+                            ".wav",
+                            ".mp3",
+                            ".flac",
+                            ".ogg",
+                            ".m4a",
+                            ".aac",
+                        )
+                    ):
                         # Remove extension to get the name
                         name = os.path.splitext(item)[0]
 
@@ -593,7 +661,17 @@ class VibeVoiceDemo:
             print(f"Error scanning directory {directory}: {e}")
 
     def read_audio(self, audio_path: str, target_sr: int = 24000) -> np.ndarray:
-        """Read and preprocess audio file."""
+        """Load an audio file and resample it to the target rate.
+
+        Args:
+            audio_path: Absolute path to the audio file.
+            target_sr: Sample rate to resample mono audio to.
+
+        Returns:
+            np.ndarray: A one-dimensional waveform resampled to ``target_sr``
+                or an empty array if loading fails.
+
+        """
         try:
             wav, sr = sf.read(audio_path)
             if len(wav.shape) > 1:
@@ -606,7 +684,15 @@ class VibeVoiceDemo:
             return np.array([])
 
     def normalize_voice_samples(self, voice_samples: list) -> list:
-        """Normalize all voice samples to similar RMS levels."""
+        """Normalize all voice samples to similar RMS levels.
+
+        Args:
+            voice_samples: Audio arrays corresponding to the selected voices.
+
+        Returns:
+            list: Normalized audio arrays preserving the input ordering.
+
+        """
         if not voice_samples:
             return voice_samples
 
@@ -660,6 +746,32 @@ class VibeVoiceDemo:
         negative_prompt: str = "",
         normalize_voices: bool = False,
     ) -> Iterator[tuple]:
+        """Stream audio chunks generated from a prepared script.
+
+        Args:
+            num_speakers: Number of distinct speakers to synthesize.
+            script: Dialogue script containing one line per utterance.
+            speaker_1: Voice preset key assigned to speaker 1.
+            speaker_2: Voice preset key assigned to speaker 2.
+            speaker_3: Voice preset key assigned to speaker 3.
+            speaker_4: Voice preset key assigned to speaker 4.
+            cfg_scale: Guidance scale controlling diffusion strength.
+            diffusion_steps: Optional override for diffusion steps.
+            do_sample: Whether to sample the language model output.
+            temperature: Softmax temperature applied to the language model.
+            top_p: Top-p nucleus sampling parameter for the language model.
+            top_k: Top-k sampling parameter for the language model.
+            negative_prompt: Text describing attributes to avoid during
+                generation.
+            normalize_voices: Whether to normalize reference voice amplitudes.
+
+        Yields:
+            tuple: Streaming audio chunk, complete audio data, log message, and a streaming visibility update.
+
+        Raises:
+            gr.Error: If inputs are invalid or voice resources cannot be loaded.
+
+        """
         try:
             # Reset stop flag and set generating state
             self.stop_generation = False
@@ -1036,7 +1148,19 @@ class VibeVoiceDemo:
         top_k=0,
         negative_prompt: str = "",
     ):
-        """Helper method to run generation with streamer in a separate thread."""
+        """Run model.generate with streaming support on a background thread.
+
+        Args:
+            inputs: Tokenized input batch returned by the processor.
+            cfg_scale: Guidance scale value for classifier-free guidance.
+            audio_streamer: Streamer instance that receives generated audio.
+            do_sample: Whether to sample from the language model distribution.
+            temperature: Softmax temperature for language model sampling.
+            top_p: Top-p nucleus sampling parameter for the language model.
+            top_k: Top-k sampling parameter for the language model.
+            negative_prompt: Text describing traits to discourage in generation.
+
+        """
         try:
             # Check for stop signal before starting generation
             if self.stop_generation:
@@ -1045,6 +1169,12 @@ class VibeVoiceDemo:
 
             # Define a stop check function that can be called from generate
             def check_stop_generation():
+                """Return whether streaming should stop early.
+
+                Returns:
+                    bool: ``True`` if a stop request was issued.
+
+                """
                 return self.stop_generation
 
             # Prepare optional negative prompt ids
@@ -1082,7 +1212,12 @@ class VibeVoiceDemo:
             audio_streamer.end()
 
     def stop_audio_generation(self):
-        """Stop the current audio generation process."""
+        """Request that the current audio generation loop stop.
+
+        Returns:
+            None: This method updates internal flags and does not return a meaningful value.
+
+        """
         self.stop_generation = True
         if self.current_streamer is not None:
             try:
@@ -1092,13 +1227,26 @@ class VibeVoiceDemo:
         print("🛑 Audio generation stop requested")
 
     def store_last_prompt_data(self, prompt_data):
-        """Store the last prompt data for regeneration."""
+        """Persist the inputs from the most recent generation request.
+
+        Args:
+            prompt_data: Data structure describing the last UI submission.
+
+        """
         self.last_prompt_data = prompt_data
 
     # Removed unused _generate_filename_from_title helper from legacy system
 
     def _parse_json_response(self, raw_response: str) -> dict:
-        """Robustly parse JSON response from OpenAI, handling code blocks and various formats."""
+        """Parse JSON-like content returned by the script generation API.
+
+        Args:
+            raw_response: Raw text received from the model response.
+
+        Returns:
+            dict: Parsed JSON payload containing ``title`` and ``script`` keys.
+
+        """
         import re
 
         if self.debug:
@@ -1195,7 +1343,25 @@ class VibeVoiceDemo:
         context: str = "",
         speaker_names: list = None,
     ) -> tuple[str, str, str]:
-        """Generate a sample conversation script using OpenAI GPT-4o-mini with simplified approach."""
+        """Generate a conversation script via an OpenAI-compatible API.
+
+        Args:
+            topic: Legacy topic string retained for backward compatibility.
+            num_speakers: Number of speakers to represent in the script.
+            style: Desired tone for the generated dialogue.
+            context: Prompt text forwarded to the language model.
+            speaker_names: Optional list of human-friendly speaker names used to
+                improve formatting.
+
+        Returns:
+            tuple[str, str, str]: Generated script text, generated title, and
+                the final prompt passed to the model for logging.
+
+        Raises:
+            Exception: If the API request fails or the response cannot be
+                parsed into a valid script.
+
+        """
         try:
             # Load environment variables from .env file
             if DOTENV_AVAILABLE:
@@ -1420,14 +1586,16 @@ class VibeVoiceDemo:
                             content_text = direct_content
                         elif isinstance(direct_content, list):
                             try:
-                                content_text = "".join([
-                                    (
-                                        part.get("text", "")
-                                        if isinstance(part, dict)
-                                        else str(part)
-                                    )
-                                    for part in direct_content
-                                ]).strip()
+                                content_text = "".join(
+                                    [
+                                        (
+                                            part.get("text", "")
+                                            if isinstance(part, dict)
+                                            else str(part)
+                                        )
+                                        for part in direct_content
+                                    ]
+                                ).strip()
                             except Exception:
                                 pass
             except Exception:
@@ -1764,7 +1932,16 @@ class VibeVoiceDemo:
 
 
 def create_demo_interface(demo_instance: VibeVoiceDemo):
-    """Create the Gradio interface with streaming support."""
+    """Build the interactive Gradio interface for the VibeVoice demo.
+
+    Args:
+        demo_instance: Configured :class:`VibeVoiceDemo` that powers the UI
+            callbacks.
+
+    Returns:
+        gr.Blocks: The constructed Blocks interface ready to be launched.
+
+    """
     # Custom CSS for high-end aesthetics with dark theme
     custom_css = """
     /* Modern dark theme with gradients */
@@ -2308,6 +2485,15 @@ Or paste text directly and it will auto-assign speakers.""",
                 )
 
         def update_speaker_visibility(num_speakers):
+            """Compute visibility updates for each speaker dropdown.
+
+            Args:
+                num_speakers: Number of speakers selected by the user.
+
+            Returns:
+                list[gr.Update]: Visibility settings for the four speaker dropdown components.
+
+            """
             updates = []
             for i in range(4):
                 updates.append(gr.update(visible=(i < num_speakers)))
@@ -2315,6 +2501,12 @@ Or paste text directly and it will auto-assign speakers.""",
 
         # Refresh the list of voices from disk and update dropdowns
         def refresh_voices():
+            """Reload voice presets from disk and update dropdown choices.
+
+            Returns:
+                list[gr.Update]: Dropdown updates reflecting refreshed voice choices.
+
+            """
             demo_instance.setup_voice_presets()
             new_choices = list(demo_instance.available_voices.keys())
             updates = []
@@ -2335,7 +2527,18 @@ Or paste text directly and it will auto-assign speakers.""",
 
         # Main generation function with streaming
         def generate_podcast_wrapper(num_speakers, script, *speakers_and_params):
-            """Wrapper function to handle the streaming generation call."""
+            """Invoke streaming generation and adapt outputs for the UI.
+
+            Args:
+                num_speakers: Number of speakers configured in the UI.
+                script: Dialogue script submitted by the user.
+                *speakers_and_params: Speaker selections and generation
+                    settings emitted by the input widgets.
+
+            Yields:
+                tuple: Streaming audio data, component updates, and log text for the Gradio interface.
+
+            """
             try:
                 # Ensure model is loaded if in LOD mode
                 demo_instance.ensure_model_loaded()
@@ -2389,7 +2592,6 @@ Or paste text directly and it will auto-assign speakers.""",
                     negative_prompt=negative_prompt_val,
                     normalize_voices=normalize_voices_val,
                 ):
-
                     # Check if we have complete audio (final yield)
                     if complete_audio is not None:
                         # Final state: clear streaming, show complete audio
@@ -2466,7 +2668,12 @@ Or paste text directly and it will auto-assign speakers.""",
                 )
 
         def stop_generation_handler():
-            """Handle stopping generation."""
+            """Stop generation and reset button state.
+
+            Returns:
+                tuple: Log text and component updates for streaming status, generate button, and stop button visibility.
+
+            """
             demo_instance.stop_audio_generation()
             # Return values for: log_output, streaming_status, generate_btn, stop_btn
             return (
@@ -2478,7 +2685,12 @@ Or paste text directly and it will auto-assign speakers.""",
 
         # Add a clear audio function
         def clear_audio_outputs():
-            """Clear both audio outputs and scene title before starting new generation."""
+            """Clear audio outputs and hide the scene title before generation.
+
+            Returns:
+                tuple: Reset values for the streaming audio, complete audio, and scene title components.
+
+            """
             return None, gr.update(value=None, visible=False), ""
 
         # Connect generation button with streaming outputs
@@ -2529,7 +2741,12 @@ Or paste text directly and it will auto-assign speakers.""",
 
         # Function to regenerate last prompt
         def regenerate_last():
-            """Regenerate using the last prompt data."""
+            """Regenerate content using the previously stored prompt data.
+
+            Returns:
+                tuple[str, str, str]: Updated script text, title HTML snippet, and a log message describing the regeneration result.
+
+            """
             if demo_instance.last_prompt_data is None:
                 error_msg = "No previous generation found to regenerate"
                 return "", "", error_msg
@@ -2597,7 +2814,23 @@ Or paste text directly and it will auto-assign speakers.""",
             speaker_3,
             speaker_4,
         ):
-            """Generate an AI-powered conversation script with context awareness."""
+            """Generate a conversation script based on the current UI context.
+
+            Args:
+                num_speakers_current: Number of speakers selected in the UI.
+                script_current: Prompt text supplied by the user.
+                speaker_1: Selected preset for speaker 1.
+                speaker_2: Selected preset for speaker 2.
+                speaker_3: Selected preset for speaker 3.
+                speaker_4: Selected preset for speaker 4.
+
+            Returns:
+                tuple[str, str, str]: Generated script, generated title, and the prompt that was sent to the LLM.
+
+            Raises:
+                Exception: If the LLM request fails.
+
+            """
             try:
                 # Get selected speakers based on num_speakers
                 selected_speakers = [speaker_1, speaker_2, speaker_3, speaker_4][
@@ -2653,7 +2886,15 @@ Or paste text directly and it will auto-assign speakers.""",
 
         # Model switching function
         def switch_model(selected_model):
-            """Switch to the selected model."""
+            """Switch to the selected model and refresh speaker dropdowns.
+
+            Args:
+                selected_model: Model identifier chosen in the UI.
+
+            Returns:
+                tuple: Status message and updates for each speaker dropdown.
+
+            """
             try:
                 success = demo_instance.switch_model(selected_model)
                 if success:
@@ -2724,6 +2965,15 @@ Or paste text directly and it will auto-assign speakers.""",
 
 
 def convert_to_16_bit_wav(data):
+    """Convert audio data to 16-bit PCM samples.
+
+    Args:
+        data: Audio samples as a NumPy array or PyTorch tensor.
+
+    Returns:
+        np.ndarray: Waveform scaled to the 16-bit integer range.
+
+    """
     # Check if data is a tensor and move to cpu
     if torch.is_tensor(data):
         data = data.detach().cpu().numpy()
@@ -2741,6 +2991,12 @@ def convert_to_16_bit_wav(data):
 
 
 def parse_args():
+    """Parse command-line arguments for the VibeVoice demo.
+
+    Returns:
+        argparse.Namespace: Parsed arguments controlling demo execution.
+
+    """
     parser = argparse.ArgumentParser(description="VibeVoice Gradio Demo")
     parser.add_argument(
         "--model_path",
@@ -2821,7 +3077,12 @@ def parse_args():
 
 
 def main():
-    """Main function to run the demo."""
+    """Launch the VibeVoice Gradio demo using parsed CLI arguments.
+
+    Returns:
+        None: This function blocks while the Gradio interface is running.
+
+    """
     args = parse_args()
 
     # ⚠️ SECURITY WARNING: Check for --share flag
